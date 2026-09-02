@@ -16,6 +16,12 @@
 - The player and interface now use a chunkier late-90s fantasy-RPG style with aged parchment, dark wood, muted metal, and stronger shadows.
 - The axe swing stays behind the character silhouette and uses a tighter arc to avoid clipping and overshooting.
 - The standalone GitHub Pages launcher now lives in `github-pages/`, avoiding a routing collision with the local app preview.
+- Players can click open ground to move manually; manual movement pauses AFK mode and the camera follows the destination.
+- Equipment can be equipped and unequipped. Equipped items use their gear slots, while removed items return to the 28-slot inventory.
+- Woodcutting requires an equipped axe, and gear choices persist with the local save.
+- The axe progression now contains 20 distinct axes from level 1 to 99. Higher tiers have increasing chances to harvest one extra log per chop.
+- The clickable bank includes a compact classic-RPG item grid, all 20 axe tiers, level locks, selected-item details, and wield/store controls.
+- The skills, equipment, and inventory panel can be minimized to its tab strip and reopened from any tab.
 
 ## Visual direction
 
@@ -36,8 +42,9 @@ Do not copy Well of Souls artwork, maps, characters, logos, or interface assets 
 2. Push the new visual checkpoint through GitHub Desktop.
 3. Make the GitHub repository public if using free GitHub Pages, then enable GitHub Actions as the Pages source.
 4. Test the published game URL and confirm saved progress, AFK mode, bank access, tabs, and camera movement.
-5. For the next art pass, add directional player poses, more building details, and another distinct woodland landmark.
-6. For the next gameplay pass, choose whether to deepen woodcutting progression or add the second skill.
+5. Test click-to-move, panel minimizing, equipping and removing gear, and several bank axe tiers.
+6. For the next art pass, add directional player poses, more building details, and another distinct woodland landmark.
+7. For the next gameplay pass, choose whether to add axe acquisition costs or begin the second skill.
 
 ## Repository
 
