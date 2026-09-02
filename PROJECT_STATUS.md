@@ -30,6 +30,7 @@
 - The skills, equipment, and inventory panel can be minimized to its tab strip and reopened from any tab.
 - Game code is now separated into focused components, world data, shared gameplay rules, inventory rules, shared types, and a categorized item catalog instead of living in one oversized route file.
 - Item definitions now include a gold `value`, category, skill, requirements, and appearance data. Normal logs have their own woodcutting resource file, armor is grouped by equipment slot, and axes are grouped under weapons so individual balancing changes stay isolated.
+- Skills now have their own top-level game section. Woodcutting owns its definition, XP curve, XP reward, level cap, and axe-use rules under `game/skills/woodcutting`, while axes remain categorized separately under `game/items/weapons/axes`.
 
 ## Visual direction
 

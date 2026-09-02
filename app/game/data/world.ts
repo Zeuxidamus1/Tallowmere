@@ -7,6 +7,5 @@ export const BANK_POSITION = {x:69,y:39};
 export const SAVE_KEY = "tallowmere-save-v1";
 export const CHOP_MS = 1700;
 export const RESPAWN_MS = 11_000;
-export const LOG_XP = 125;
 export const MAX_INVENTORY_SLOTS = 28;
 export const MAX_OFFLINE_MS = 12*60*60*1000;

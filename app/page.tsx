@@ -5,10 +5,11 @@ import { GearSlot } from "./game/components/GearSlot";
 import { InventoryGrid } from "./game/components/InventoryGrid";
 import { AxeIcon, GearIcon, ItemIcon, LogIcon } from "./game/components/ItemIcons";
 import { PixelTree } from "./game/components/PixelTree";
-import { BANK_POSITION, CHOP_MS, LOG_XP, MAX_INVENTORY_SLOTS, MAX_OFFLINE_MS, RESPAWN_MS, SAVE_KEY, TREE_LAYOUT } from "./game/data/world";
-import { availableTree, equippedAxe, formatDuration, formatNumber, hasWoodcuttingAxe, initialGame, levelFromXp, MAX_XP, moveToBank, moveToNextTree, moveToTree, walkTime, xpForLevel } from "./game/lib/game-state";
+import { BANK_POSITION, CHOP_MS, MAX_INVENTORY_SLOTS, MAX_OFFLINE_MS, RESPAWN_MS, SAVE_KEY, TREE_LAYOUT } from "./game/data/world";
+import { availableTree, formatDuration, formatNumber, initialGame, moveToBank, moveToNextTree, moveToTree, walkTime } from "./game/lib/game-state";
 import { addInventoryItems, inventoryItemCount, inventorySlotsUsed, itemCount, normalizeInventorySlots, normalizeItemCounts, removeInventoryItems, setItemCount } from "./game/lib/inventory";
 import { AXES, AXE_BY_ID, GEAR, ITEMS } from "./game/items";
+import { equippedWoodcuttingAxe, hasWoodcuttingAxe, MAX_WOODCUTTING_XP, WOODCUTTING, WOODCUTTING_XP_PER_LOG, woodcuttingLevelFromXp, xpForWoodcuttingLevel } from "./game/skills";
 import type { AxeId, BankItemId, BankMenuMode, EquipmentSlot, EquipmentState, GameState, GearId, ItemCounts, ItemId, OfflineSummary, Panel, TreeState } from "./game/types";
 
 export default function Home() {
@@ -54,9 +55,9 @@ export default function Home() {
         const offlineAxe = equipment.weapon && GEAR[equipment.weapon]?.kind === "axe" ? AXE_BY_ID[equipment.weapon as AxeId] : null;
         const offlineActions = saved.afk && offlineAxe && elapsed > 10_000 ? Math.floor(elapsed / 2400) : 0;
         const offlineLogs = offlineAxe ? Math.floor(offlineActions * (1 + offlineAxe.bonusChance)) : 0;
-        const offlineXp = offlineLogs * LOG_XP;
+        const offlineXp = offlineLogs * WOODCUTTING_XP_PER_LOG;
         bankItems=setItemCount(bankItems,"logs",itemCount(bankItems,"logs")+offlineLogs);
-        setGame({ ...base, xp:Math.min(MAX_XP,(saved.xp ?? 0) + offlineXp),inventorySlots,bankItems,equipment,afk:saved.afk ?? true,
+        setGame({ ...base, xp:Math.min(MAX_WOODCUTTING_XP,(saved.xp ?? 0) + offlineXp),inventorySlots,bankItems,equipment,afk:saved.afk ?? true,
           characterX:saved.characterX ?? base.characterX, characterY:saved.characterY ?? base.characterY,
           trees:savedTrees.map((tree,index) => tree.respawnAt && tree.respawnAt <= now ? { ...tree, charges:tree.maxCharges || base.trees[index].maxCharges, respawnAt:0 } : tree), now });
         if (offlineLogs > 0) setOffline({ elapsed, logs:offlineLogs, xp:offlineXp });
@@ -107,14 +108,14 @@ export default function Home() {
         const index = state.trees.findIndex(item => item.id === state.targetTreeId);
         const tree = state.trees[index];
         if (!tree || tree.charges <= 0) return state.afk ? moveToNextTree(state,now) : { ...state, action:"idle", targetTreeId:null };
-        const axe = equippedAxe(state);
+        const axe = equippedWoodcuttingAxe(state);
         const freeSlots = MAX_INVENTORY_SLOTS - inventorySlotsUsed(state);
         const bonusLog = axe && Math.random() < axe.bonusChance ? 1 : 0;
         const logsGained = Math.min(tree.charges,freeSlots,1 + bonusLog);
         const remaining = tree.charges - logsGained;
         const trees = state.trees.slice();
         trees[index] = { ...tree, charges:remaining, respawnAt:remaining === 0 ? now + RESPAWN_MS : 0 };
-        state = { ...state, trees, inventorySlots:addInventoryItems(state.inventorySlots,"logs",logsGained), xp:Math.min(MAX_XP,state.xp + LOG_XP * logsGained) };
+        state = { ...state, trees, inventorySlots:addInventoryItems(state.inventorySlots,"logs",logsGained), xp:Math.min(MAX_WOODCUTTING_XP,state.xp + WOODCUTTING_XP_PER_LOG * logsGained) };
         if (inventorySlotsUsed(state) >= MAX_INVENTORY_SLOTS) return state.afk ? moveToBank(state,now) : { ...state, action:"idle", targetTreeId:null };
         if (remaining === 0) return state.afk ? moveToNextTree(state,now) : { ...state, action:"idle", targetTreeId:null };
         return { ...state, nextActionAt:now + CHOP_MS };
@@ -130,9 +131,9 @@ export default function Home() {
     return () => window.clearInterval(timer);
   }, [hydrated]);
 
-  const level = levelFromXp(game.xp);
-  const levelStart = xpForLevel(level);
-  const nextLevelXp = level >= 99 ? MAX_XP : xpForLevel(level + 1);
+  const level = woodcuttingLevelFromXp(game.xp);
+  const levelStart = xpForWoodcuttingLevel(level);
+  const nextLevelXp = level >= WOODCUTTING.maxLevel ? MAX_WOODCUTTING_XP : xpForWoodcuttingLevel(level + 1);
   const xpProgress = level >= 99 ? 100 : Math.max(0,Math.min(100,((game.xp-levelStart)/(nextLevelXp-levelStart))*100));
   const actionProgress = game.action === "chopping" ? Math.max(4,Math.min(100,(1-(game.nextActionAt-game.now)/CHOP_MS)*100)) : xpProgress;
   const inventoryUsed = inventorySlotsUsed(game);
@@ -140,7 +141,7 @@ export default function Home() {
   const bankLogs = itemCount(game.bankItems,"logs");
   const firstInventoryItem = game.inventorySlots.find((item):item is ItemId => Boolean(item)) ?? null;
   const equippedCount = Object.values(game.equipment).filter(Boolean).length;
-  const currentAxe = equippedAxe(game);
+  const currentAxe = equippedWoodcuttingAxe(game);
   const selectedItem = ITEMS[selectedBankItem];
   const selectedItemEquipped = selectedBankItem !== "logs" && Object.values(game.equipment).includes(selectedBankItem as GearId);
   const selectedItemInPack = inventoryItemCount(game.inventorySlots,selectedBankItem)>0;
@@ -218,7 +219,7 @@ export default function Home() {
 
   const equipGear = (id:GearId) => {
     const item = GEAR[id];
-    if (item.requiredLevel > level) { setGearNotice(`${item.name} requires Woodcutting level ${item.requiredLevel}.`); setPanel("equipment"); return; }
+    if (item.requiredLevel > level) { setGearNotice(`${item.name} requires ${WOODCUTTING.name} level ${item.requiredLevel}.`); setPanel("equipment"); return; }
     setGame(previous => {
       const inventoryIndex = previous.inventorySlots.indexOf(id);
       if (inventoryIndex < 0) return previous;
@@ -307,7 +308,7 @@ export default function Home() {
     <header className="topbar">
       <div className="brand-lockup"><span className="brand-mark" aria-hidden="true"><i/><b/></span><div><h1>Tallowmere</h1><p>The old woods remember</p></div></div>
       <div className="player-stats" aria-label="Player stats">
-        <div className="stat-pill"><span className="stat-icon stat-icon--star">✦</span><div><small>Woodcutting</small><strong>Level {level}</strong></div></div>
+        <div className="stat-pill"><span className="stat-icon stat-icon--star">✦</span><div><small>{WOODCUTTING.name}</small><strong>Level {level}</strong></div></div>
         <div className="stat-pill"><span className="stat-icon stat-icon--log"/><div><small>Banked logs</small><strong>{formatNumber(bankLogs)}</strong></div></div>
         <div className="world-size"><span/>100 × 100 TILES</div>
       </div>
@@ -368,7 +369,7 @@ export default function Home() {
                   </button>;
                 })}
               </div>
-              <div className="bank-selected-item"><ItemIcon id={selectedItem.id}/><div><small>SELECTED ITEM</small><strong>{selectedItem.name}</strong><span>{selectedItem.kind==="axe" ? `Woodcutting ${selectedItem.requiredLevel} · ${Math.round(AXE_BY_ID[selectedItem.id as AxeId].bonusChance*100)}% extra-log chance` : selectedItem.description}</span></div>
+              <div className="bank-selected-item"><ItemIcon id={selectedItem.id}/><div><small>SELECTED ITEM</small><strong>{selectedItem.name}</strong><span>{selectedItem.kind==="axe" ? `${WOODCUTTING.name} ${selectedItem.requiredLevel} · ${Math.round(AXE_BY_ID[selectedItem.id as AxeId].bonusChance*100)}% extra-log chance` : selectedItem.description}</span></div>
                 {selectedItemEquipped ? <button type="button" disabled>Equipped</button> : selectedItemInBank ? <button type="button" onClick={() => withdrawBankItem(selectedBankItem,1)}>Withdraw 1</button> : selectedItemInPack ? <button type="button" onClick={() => depositInventoryItem(selectedBankItem,1)}>Store 1</button> : <button type="button" disabled>Unavailable</button>}
               </div>
               <div className="bank-classic-controls"><button type="button" className="bank-deposit" disabled={inventoryUsed===0} onClick={depositEntireInventory}>{inventoryUsed>0 ? `Deposit inventory (${inventoryUsed})` : "Inventory empty"}</button><span>{gearNotice}</span><small>Bank: left withdraws · right opens options</small></div>
@@ -417,14 +418,14 @@ export default function Home() {
 
         <div className="status-dock" aria-live="polite">
           <span className="status-avatar"><i/></span><div className="status-copy"><small>Current action</small><strong>{actionText}</strong></div>
-          <div className="status-divider"/><div className="xp-summary"><small>Woodcutting XP</small><strong>{formatNumber(game.xp)} <span>/ {level>=99 ? "MAX" : formatNumber(nextLevelXp)} XP</span></strong></div>
+          <div className="status-divider"/><div className="xp-summary"><small>{WOODCUTTING.name} XP</small><strong>{formatNumber(game.xp)} <span>/ {level>=WOODCUTTING.maxLevel ? "MAX" : formatNumber(nextLevelXp)} XP</span></strong></div>
           <div className="xp-bar" title={game.action==="chopping" ? "Chop progress" : "Level progress"}><span style={{width:`${actionProgress}%`}}/></div>
         </div>
 
         <aside className={`side-panel ${panelMinimized ? "side-panel--minimized" : ""} ${bankOpen ? "side-panel--bank-open" : ""}`}>
           <div className="panel-tabs" aria-label="Game panels">
             <button className="panel-minimize" type="button" aria-label={panelMinimized ? "Open game panel" : "Minimize game panel"} aria-expanded={!panelMinimized} onClick={() => setPanelMinimized(value => !value)}>{panelMinimized ? "▴" : "—"}</button>
-            <button className={`panel-tab ${panel==="skills" ? "panel-tab--active" : ""}`} type="button" aria-label="Woodcutting skill" aria-pressed={panel==="skills"} onClick={() => {setPanel("skills");setPanelMinimized(false);}}><span className="tab-axe"><i/><b/></span></button>
+            <button className={`panel-tab ${panel==="skills" ? "panel-tab--active" : ""}`} type="button" aria-label={`${WOODCUTTING.name} skill`} aria-pressed={panel==="skills"} onClick={() => {setPanel("skills");setPanelMinimized(false);}}><span className="tab-axe"><i/><b/></span></button>
             <button className={`panel-tab ${panel==="equipment" ? "panel-tab--active" : ""}`} type="button" aria-label="Equipment" aria-pressed={panel==="equipment"} onClick={() => {setPanel("equipment");setPanelMinimized(false);}}><span className="tab-equipment"><i/><b/></span></button>
             <button className={`panel-tab ${panel==="inventory" ? "panel-tab--active" : ""}`} type="button" aria-label="Inventory" aria-pressed={panel==="inventory"} onClick={() => {setPanel("inventory");setPanelMinimized(false);}}><span className="tab-bag"><i/></span></button>
           </div>
@@ -437,9 +438,9 @@ export default function Home() {
               <div className="item-detail">{firstInventoryItem ? <><ItemIcon id={firstInventoryItem} small/><div><strong>{ITEMS[firstInventoryItem].name}</strong><small>{firstInventoryItem === "logs" ? `${inventoryLogs} ready to bank` : ITEMS[firstInventoryItem].description}</small></div></> : <><LogIcon small/><div><strong>Empty pack</strong><small>Your pack is ready</small></div></>}</div>
             </> : panel === "skills" ? <div className="skill-panel">
               <div className="panel-heading"><div><span>Skills</span><small>1 skill available</small></div><b>1</b></div>
-              <div className="skill-card"><span className="skill-card__icon"><span className="tab-axe"><i/><b/></span></span><div className="skill-card__copy"><small>WOODCUTTING</small><strong>Level {level}</strong><span>{formatNumber(game.xp)} XP</span></div></div>
-              <div className="skill-progress"><div><span>Level {level}</span><b>{level>=99 ? "Maximum level" : `${formatNumber(nextLevelXp-game.xp)} XP to ${level+1}`}</b></div><i><span style={{width:`${xpProgress}%`}}/></i></div>
-              <div className="xp-boost"><strong>5× XP active</strong><span>Each log grants 125 XP</span></div>
+              <div className="skill-card"><span className="skill-card__icon"><span className="tab-axe"><i/><b/></span></span><div className="skill-card__copy"><small>{WOODCUTTING.name.toUpperCase()}</small><strong>Level {level}</strong><span>{formatNumber(game.xp)} XP</span></div></div>
+              <div className="skill-progress"><div><span>Level {level}</span><b>{level>=WOODCUTTING.maxLevel ? "Maximum level" : `${formatNumber(nextLevelXp-game.xp)} XP to ${level+1}`}</b></div><i><span style={{width:`${xpProgress}%`}}/></i></div>
+              <div className="xp-boost"><strong>{WOODCUTTING.xpMultiplier}× XP active</strong><span>Each log grants {WOODCUTTING.xpPerAction} XP</span></div>
             </div> : <div className="equipment-panel">
               <div className="panel-heading"><div><span>Equipment</span><small>{equippedCount} items equipped</small></div><b>{equippedCount}</b></div>
               <div className="equipment-layout">

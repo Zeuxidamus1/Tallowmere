@@ -1,6 +1,7 @@
 import { useRef, useState, type DragEvent as ReactDragEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from "react";
 import { MAX_INVENTORY_SLOTS } from "../data/world";
 import { GEAR, ITEMS } from "../items";
+import { WOODCUTTING } from "../skills";
 import type { GearId, InventorySlots, ItemId } from "../types";
 import { GearIcon, ItemIcon } from "./ItemIcons";
 
@@ -38,7 +39,7 @@ export function InventoryGrid({slots,level,mode="equip",onActivate,onItemContext
       if (itemId && ITEMS[itemId].kind!=="resource") {
         const gearId = itemId as GearId;
         const locked = mode==="equip" && GEAR[gearId].requiredLevel>level;
-        const title = mode==="deposit" ? `Deposit ${GEAR[gearId].name}` : locked ? `${GEAR[gearId].name} requires Woodcutting ${GEAR[gearId].requiredLevel}` : `Equip ${GEAR[gearId].name}`;
+        const title = mode==="deposit" ? `Deposit ${GEAR[gearId].name}` : locked ? `${GEAR[gearId].name} requires ${WOODCUTTING.name} ${GEAR[gearId].requiredLevel}` : `Equip ${GEAR[gearId].name}`;
         return <button className={`inventory-slot inventory-slot--filled inventory-slot--gear inventory-slot--draggable ${locked ? "inventory-slot--locked" : ""} ${draggedSlot===index ? "inventory-slot--dragging" : ""}`} type="button" key={index}
           draggable onDragStart={event => {event.dataTransfer.effectAllowed="move";event.dataTransfer.setData("application/x-tallowmere-slot",String(index));setDraggedSlot(index);}}
           onDragEnd={() => {lastDragEndedAt.current=Date.now();setDraggedSlot(null);}} onDragOver={event => event.preventDefault()} onDrop={event => dropItem(event,index)} onKeyDown={event => moveWithKeyboard(event,index)}

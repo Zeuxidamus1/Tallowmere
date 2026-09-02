@@ -1,6 +1,6 @@
-import { AXES, AXE_BY_ID, GEAR, STARTING_EQUIPMENT } from "../items";
+import { AXES, STARTING_EQUIPMENT } from "../items";
 import { BANK_POSITION, MAX_INVENTORY_SLOTS, TREE_LAYOUT } from "../data/world";
-import type { AxeId, GameState, ItemCounts, ItemId, TreeState } from "../types";
+import type { GameState, ItemCounts, ItemId, TreeState } from "../types";
 
 function makeTrees():TreeState[] {
   return TREE_LAYOUT.map(([x,y],id) => {
@@ -17,29 +17,6 @@ export function initialGame():GameState {
     action:"idle", targetTreeId:null, nextActionAt:0, characterX:55, characterY:45,
     trees:makeTrees(), now:Date.now(), equipment:{...STARTING_EQUIPMENT},
   };
-}
-
-export function hasWoodcuttingAxe(state:Pick<GameState,"equipment">) {
-  const weapon = state.equipment.weapon;
-  return Boolean(weapon && GEAR[weapon]?.kind==="axe");
-}
-
-export function equippedAxe(state:Pick<GameState,"equipment">) {
-  const weapon = state.equipment.weapon;
-  return weapon && GEAR[weapon]?.kind==="axe" ? AXE_BY_ID[weapon as AxeId] : null;
-}
-
-export function xpForLevel(level:number) {
-  let points = 0;
-  for (let i=1;i<level;i+=1) points += Math.floor(i+300*Math.pow(2,i/7));
-  return Math.floor(points/4);
-}
-
-export const MAX_XP = xpForLevel(99);
-
-export function levelFromXp(xp:number) {
-  for (let level=99;level>=2;level-=1) if (xp>=xpForLevel(level)) return level;
-  return 1;
 }
 
 function distance(ax:number,ay:number,bx:number,by:number) {

@@ -29,11 +29,12 @@ test("server-renders the Tallowmere game",async () => {
 });
 
 test("keeps item data and reusable game systems outside the route",async () => {
-  const [page,itemRegistry,normalLogs,axes,inventoryRules,inventoryGrid] = await Promise.all([
+  const [page,itemRegistry,normalLogs,axes,woodcutting,inventoryRules,inventoryGrid] = await Promise.all([
     readFile(new URL("../app/page.tsx",import.meta.url),"utf8"),
     readFile(new URL("../app/game/items/index.ts",import.meta.url),"utf8"),
-    readFile(new URL("../app/game/items/resources/woodcutting/normal-logs.ts",import.meta.url),"utf8"),
+    readFile(new URL("../app/game/items/resources/logs/normal-logs.ts",import.meta.url),"utf8"),
     readFile(new URL("../app/game/items/weapons/axes/index.ts",import.meta.url),"utf8"),
+    readFile(new URL("../app/game/skills/woodcutting/index.ts",import.meta.url),"utf8"),
     readFile(new URL("../app/game/lib/inventory.ts",import.meta.url),"utf8"),
     readFile(new URL("../app/game/components/InventoryGrid.tsx",import.meta.url),"utf8"),
   ]);
@@ -43,6 +44,10 @@ test("keeps item data and reusable game systems outside the route",async () => {
   assert.match(normalLogs,/value:\s*1/);
   assert.match(axes,/category:"weapons"/);
   assert.match(axes,/value:\s*500000/);
+  assert.match(woodcutting,/id:"woodcutting"/);
+  assert.match(woodcutting,/xpMultiplier:5/);
+  assert.match(woodcutting,/xpPerAction:125/);
+  assert.match(woodcutting,/MAX_WOODCUTTING_XP/);
   assert.match(itemRegistry,/logs:normalLogs/);
   assert.match(inventoryRules,/export function addInventoryItems/);
   assert.match(inventoryGrid,/export function InventoryGrid/);

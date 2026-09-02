@@ -3,7 +3,7 @@ import { leatherCap } from "./armor/head/leather-cap";
 import { travelerTunic } from "./armor/body/traveler-tunic";
 import { woodenBuckler } from "./armor/shields/wooden-buckler";
 import { wornTrousers } from "./armor/legs/worn-trousers";
-import { normalLogs } from "./resources/woodcutting/normal-logs";
+import { normalLogs } from "./resources/logs/normal-logs";
 import { AXES } from "./weapons/axes";
 
 export { AXES };
