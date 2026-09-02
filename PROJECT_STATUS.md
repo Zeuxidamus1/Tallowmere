@@ -28,6 +28,8 @@
 - Inventory contents now retain their exact 28-slot positions. Loot, skilling rewards, and bank withdrawals fill the next free slot without regrouping existing items, and players can drag items onto empty or occupied slots to move or swap them.
 - Depositing from the bank-side inventory targets the exact slot clicked; quantity deposits remove that chosen copy first before taking other matching copies.
 - The skills, equipment, and inventory panel can be minimized to its tab strip and reopened from any tab.
+- Game code is now separated into focused components, world data, shared gameplay rules, inventory rules, shared types, and a categorized item catalog instead of living in one oversized route file.
+- Item definitions now include a gold `value`, category, skill, requirements, and appearance data. Normal logs have their own woodcutting resource file, armor is grouped by equipment slot, and axes are grouped under weapons so individual balancing changes stay isolated.
 
 ## Visual direction
 
