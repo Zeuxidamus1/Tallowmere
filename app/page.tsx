@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent as ReactDragEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from "react";
 
 const TREE_LAYOUT = [
   [8,13],[17,24],[29,12],[42,19],[55,11],[72,18],[86,11],[11,56],[24,69],
@@ -24,12 +24,13 @@ type ItemId = "logs" | GearId;
 type BankItemId = ItemId;
 type BankMenuMode = "withdraw" | "deposit";
 type ItemCounts = Partial<Record<ItemId,number>>;
+type InventorySlots = Array<ItemId|null>;
 type GearItem = { id:GearId; name:string; slot:EquipmentSlot; description:string; kind:"axe"|"armor"; requiredLevel:number };
 type AxeItem = GearItem & { id:AxeId; kind:"axe"; bonusChance:number; metal:string; edge:string; handle:string; shape:number };
 type EquipmentState = Record<EquipmentSlot,GearId | null>;
 type TreeState = { id: number; x: number; y: number; charges: number; maxCharges: number; respawnAt: number };
 type GameState = {
-  xp: number; inventoryItems:ItemCounts; bankItems:ItemCounts; afk: boolean; action: Action;
+  xp: number; inventorySlots:InventorySlots; bankItems:ItemCounts; afk: boolean; action: Action;
   targetTreeId: number | null; nextActionAt: number; characterX: number; characterY: number;
   trees: TreeState[]; now: number; equipment:EquipmentState;
 };
@@ -86,7 +87,7 @@ function makeTrees(): TreeState[] {
 function initialGame(): GameState {
   const bankItems:ItemCounts = {logs:0};
   AXES.filter(axe => axe.id !== "bronze-axe").forEach(axe => { bankItems[axe.id]=1; });
-  return { xp:0, inventoryItems:{}, bankItems, afk:true, action:"idle", targetTreeId:null,
+  return { xp:0, inventorySlots:Array<ItemId|null>(MAX_INVENTORY_SLOTS).fill(null), bankItems, afk:true, action:"idle", targetTreeId:null,
     nextActionAt:0, characterX:55, characterY:45, trees:makeTrees(), now:Date.now(),
     equipment:{...STARTING_EQUIPMENT} };
 }
@@ -104,8 +105,42 @@ function normalizeItemCounts(value:unknown,fallback:ItemCounts={}):ItemCounts {
     return counts;
   },{});
 }
-function inventorySlotsUsed(state:Pick<GameState,"inventoryItems">) {
-  return Object.values(state.inventoryItems).reduce((total,count) => total + Math.max(0,Math.floor(count ?? 0)),0);
+function itemCountsToInventorySlots(items:ItemCounts):InventorySlots {
+  const slots:InventorySlots = Array<ItemId|null>(MAX_INVENTORY_SLOTS).fill(null);
+  let index = 0;
+  (Object.keys(ITEMS) as ItemId[]).forEach(id => {
+    for (let count=0;count<itemCount(items,id) && index<MAX_INVENTORY_SLOTS;count+=1) slots[index++]=id;
+  });
+  return slots;
+}
+function normalizeInventorySlots(value:unknown,fallback:ItemCounts={}):InventorySlots {
+  if (!Array.isArray(value)) return itemCountsToInventorySlots(fallback);
+  return Array.from({length:MAX_INVENTORY_SLOTS},(_,index) => {
+    const id = value[index];
+    return typeof id === "string" && id in ITEMS ? id as ItemId : null;
+  });
+}
+function inventorySlotsUsed(state:Pick<GameState,"inventorySlots">) {
+  return state.inventorySlots.reduce((total,item) => total + (item ? 1 : 0),0);
+}
+function inventoryItemCount(slots:InventorySlots,id:ItemId) {
+  return slots.reduce((total,item) => total + (item===id ? 1 : 0),0);
+}
+function addInventoryItems(slots:InventorySlots,id:ItemId,amount:number):InventorySlots {
+  const next = slots.slice();
+  let remaining = Math.max(0,Math.floor(amount));
+  for (let index=0;index<next.length && remaining>0;index+=1) {
+    if (!next[index]) { next[index]=id; remaining-=1; }
+  }
+  return next;
+}
+function removeInventoryItems(slots:InventorySlots,id:ItemId,amount:number):InventorySlots {
+  const next = slots.slice();
+  let remaining = Math.max(0,Math.floor(amount));
+  for (let index=0;index<next.length && remaining>0;index+=1) {
+    if (next[index]===id) { next[index]=null; remaining-=1; }
+  }
+  return next;
 }
 
 function hasWoodcuttingAxe(state:Pick<GameState,"equipment">) {
@@ -205,23 +240,59 @@ function ItemIcon({ id, small=false }:{id:ItemId;small?:boolean}) {
   return <GearIcon id={id as GearId} small={small}/>;
 }
 
-function InventoryGrid({ items, level, onEquip }:{items:ItemCounts;level:number;onEquip:(id:GearId)=>void}) {
-  const inventory = (Object.keys(ITEMS) as ItemId[]).flatMap(id => Array.from({length:itemCount(items,id)},() => id));
-  const used = inventory.length;
+function InventoryGrid({ slots, level, mode="equip", onActivate, onItemContext, onMove }:{
+  slots:InventorySlots; level:number; mode?:"equip"|"deposit"; onActivate?:(id:ItemId)=>void;
+  onItemContext?:(event:ReactMouseEvent<HTMLButtonElement>,id:ItemId)=>void; onMove:(from:number,to:number)=>void;
+}) {
+  const [draggedSlot,setDraggedSlot] = useState<number|null>(null);
+  const lastDragEndedAt = useRef(0);
+  const used = slots.reduce((total,item) => total+(item ? 1 : 0),0);
+  const dropItem = (event:ReactDragEvent<HTMLButtonElement>,to:number) => {
+    event.preventDefault();
+    const rawFrom = event.dataTransfer.getData("application/x-tallowmere-slot");
+    const fromData = rawFrom === "" ? null : Number(rawFrom);
+    const from = fromData !== null && Number.isInteger(fromData) ? fromData : draggedSlot;
+    if (from !== null && from >= 0 && from < MAX_INVENTORY_SLOTS && from !== to) onMove(from,to);
+    setDraggedSlot(null);
+  };
+  const moveWithKeyboard = (event:ReactKeyboardEvent<HTMLButtonElement>,from:number) => {
+    if (!event.altKey) return;
+    const offsets:Record<string,number> = {ArrowLeft:-1,ArrowRight:1,ArrowUp:-7,ArrowDown:7};
+    const offset = offsets[event.key];
+    if (!offset) return;
+    const to = from+offset;
+    if (to<0 || to>=MAX_INVENTORY_SLOTS) return;
+    event.preventDefault(); onMove(from,to);
+  };
+  const activateItem = (id:ItemId) => {
+    if (Date.now()-lastDragEndedAt.current < 180) return;
+    onActivate?.(id);
+  };
   return <div className="inventory-grid" aria-label={`Inventory, ${used} of 28 slots used`}>
     {Array.from({length:28}).map((_,index) => {
-      const itemId = inventory[index];
+      const itemId = slots[index];
       if (itemId && ITEMS[itemId].kind !== "resource") {
         const gearId = itemId as GearId;
-        const locked = GEAR[gearId].requiredLevel > level;
-        return <button className={`inventory-slot inventory-slot--filled inventory-slot--gear ${locked ? "inventory-slot--locked" : ""}`} type="button" key={index}
-        onClick={() => onEquip(gearId)} title={locked ? `${GEAR[gearId].name} requires Woodcutting ${GEAR[gearId].requiredLevel}` : `Equip ${GEAR[gearId].name}`} aria-label={locked ? `${GEAR[gearId].name}, locked until Woodcutting level ${GEAR[gearId].requiredLevel}` : `Equip ${GEAR[gearId].name}`}>
-        <GearIcon id={gearId}/><span className="inventory-equip-mark">{locked ? GEAR[gearId].requiredLevel : "+"}</span>
-      </button>;
+        const locked = mode==="equip" && GEAR[gearId].requiredLevel > level;
+        const title = mode==="deposit" ? `Deposit ${GEAR[gearId].name}` : locked ? `${GEAR[gearId].name} requires Woodcutting ${GEAR[gearId].requiredLevel}` : `Equip ${GEAR[gearId].name}`;
+        return <button className={`inventory-slot inventory-slot--filled inventory-slot--gear inventory-slot--draggable ${locked ? "inventory-slot--locked" : ""} ${draggedSlot===index ? "inventory-slot--dragging" : ""}`} type="button" key={index}
+          draggable onDragStart={event => {event.dataTransfer.effectAllowed="move";event.dataTransfer.setData("application/x-tallowmere-slot",String(index));setDraggedSlot(index);}}
+          onDragEnd={() => {lastDragEndedAt.current=Date.now();setDraggedSlot(null);}} onDragOver={event => event.preventDefault()} onDrop={event => dropItem(event,index)} onKeyDown={event => moveWithKeyboard(event,index)}
+          onClick={() => activateItem(itemId)} onContextMenu={event => onItemContext?.(event,itemId)} title={`${title}. Drag to rearrange.`} aria-label={`${title}. Drag to rearrange.`}>
+          <GearIcon id={gearId}/><span className="inventory-equip-mark">{mode==="deposit" ? "↓" : locked ? GEAR[gearId].requiredLevel : "+"}</span>
+        </button>;
       }
-      return <div className={`inventory-slot ${itemId ? "inventory-slot--filled" : ""}`} key={index}>
-        {itemId && <><ItemIcon id={itemId}/><span className="item-amount">1</span><span className="sr-only">{ITEMS[itemId].name}</span></>}
-      </div>;
+      if (itemId) {
+        const title = mode==="deposit" ? `Deposit ${ITEMS[itemId].name}` : ITEMS[itemId].name;
+        return <button className={`inventory-slot inventory-slot--filled inventory-slot--draggable ${mode==="deposit" ? "inventory-slot--actionable" : ""} ${draggedSlot===index ? "inventory-slot--dragging" : ""}`} type="button" key={index}
+          draggable onDragStart={event => {event.dataTransfer.effectAllowed="move";event.dataTransfer.setData("application/x-tallowmere-slot",String(index));setDraggedSlot(index);}}
+          onDragEnd={() => {lastDragEndedAt.current=Date.now();setDraggedSlot(null);}} onDragOver={event => event.preventDefault()} onDrop={event => dropItem(event,index)} onKeyDown={event => moveWithKeyboard(event,index)}
+          onClick={() => mode==="deposit" && activateItem(itemId)} onContextMenu={event => onItemContext?.(event,itemId)} title={`${title}. Drag to rearrange.`} aria-label={`${title}. Drag to rearrange.`}>
+          <ItemIcon id={itemId}/><span className="item-amount">1</span>
+        </button>;
+      }
+      return <button className="inventory-slot inventory-slot--drop-target" type="button" key={index} aria-label={`Empty inventory slot ${index+1}`}
+        onDragOver={event => {event.preventDefault();event.dataTransfer.dropEffect="move";}} onDrop={event => dropItem(event,index)}/>;
     })}
   </div>;
 }
@@ -258,30 +329,29 @@ export default function Home() {
     try {
       const raw = localStorage.getItem(SAVE_KEY);
       if (raw) {
-        const saved = JSON.parse(raw) as Partial<GameState> & { lastSeen?:number;inventoryLogs?:number;bankLogs?:number;inventoryGear?:GearId[];bankGear?:AxeId[] };
+        const saved = JSON.parse(raw) as Partial<GameState> & { lastSeen?:number;inventoryItems?:ItemCounts;inventoryLogs?:number;bankLogs?:number;inventoryGear?:GearId[];bankGear?:AxeId[] };
         const base = initialGame();
         const savedTrees = Array.isArray(saved.trees) && saved.trees.length === TREE_LAYOUT.length ? saved.trees : base.trees;
         const equipment:EquipmentState = saved.equipment ? { ...base.equipment,...saved.equipment } : base.equipment;
-        let inventoryItems = normalizeItemCounts(saved.inventoryItems);
+        let legacyInventoryItems = normalizeItemCounts(saved.inventoryItems);
         if (!saved.inventoryItems) {
-          inventoryItems = setItemCount(inventoryItems,"logs",saved.inventoryLogs ?? 0);
-          (saved.inventoryGear ?? []).filter(id => id in GEAR).forEach(id => { inventoryItems=setItemCount(inventoryItems,id,itemCount(inventoryItems,id)+1); });
+          legacyInventoryItems = setItemCount(legacyInventoryItems,"logs",saved.inventoryLogs ?? 0);
+          (saved.inventoryGear ?? []).filter(id => id in GEAR).forEach(id => { legacyInventoryItems=setItemCount(legacyInventoryItems,id,itemCount(legacyInventoryItems,id)+1); });
         }
+        const inventorySlots = normalizeInventorySlots(saved.inventorySlots,legacyInventoryItems);
         let bankItems = normalizeItemCounts(saved.bankItems,base.bankItems);
         if (!saved.bankItems) {
           bankItems = setItemCount({},"logs",saved.bankLogs ?? 0);
           const legacyBankGear = saved.bankGear ?? AXES.filter(axe => axe.id!=="bronze-axe").map(axe => axe.id);
           legacyBankGear.filter(id => id in AXE_BY_ID).forEach(id => { bankItems=setItemCount(bankItems,id,itemCount(bankItems,id)+1); });
         }
-        const excessSlots = Math.max(0,inventorySlotsUsed({inventoryItems})-MAX_INVENTORY_SLOTS);
-        if (excessSlots) inventoryItems=setItemCount(inventoryItems,"logs",Math.max(0,itemCount(inventoryItems,"logs")-excessSlots));
         const elapsed = Math.min(MAX_OFFLINE_MS, Math.max(0, now - (saved.lastSeen ?? now)));
         const offlineAxe = equipment.weapon && GEAR[equipment.weapon]?.kind === "axe" ? AXE_BY_ID[equipment.weapon as AxeId] : null;
         const offlineActions = saved.afk && offlineAxe && elapsed > 10_000 ? Math.floor(elapsed / 2400) : 0;
         const offlineLogs = offlineAxe ? Math.floor(offlineActions * (1 + offlineAxe.bonusChance)) : 0;
         const offlineXp = offlineLogs * LOG_XP;
         bankItems=setItemCount(bankItems,"logs",itemCount(bankItems,"logs")+offlineLogs);
-        setGame({ ...base, xp:Math.min(MAX_XP,(saved.xp ?? 0) + offlineXp),inventoryItems,bankItems,equipment,afk:saved.afk ?? true,
+        setGame({ ...base, xp:Math.min(MAX_XP,(saved.xp ?? 0) + offlineXp),inventorySlots,bankItems,equipment,afk:saved.afk ?? true,
           characterX:saved.characterX ?? base.characterX, characterY:saved.characterY ?? base.characterY,
           trees:savedTrees.map((tree,index) => tree.respawnAt && tree.respawnAt <= now ? { ...tree, charges:tree.maxCharges || base.trees[index].maxCharges, respawnAt:0 } : tree), now });
         if (offlineLogs > 0) setOffline({ elapsed, logs:offlineLogs, xp:offlineXp });
@@ -295,7 +365,7 @@ export default function Home() {
     if (!hydrated) return;
     const save = () => {
       const current = latestGame.current;
-      localStorage.setItem(SAVE_KEY, JSON.stringify({ xp:current.xp, inventoryItems:current.inventoryItems,bankItems:current.bankItems,
+      localStorage.setItem(SAVE_KEY, JSON.stringify({ xp:current.xp, inventorySlots:current.inventorySlots,bankItems:current.bankItems,
         afk:current.afk, characterX:current.characterX, characterY:current.characterY,
         trees:current.trees, equipment:current.equipment,lastSeen:Date.now() }));
     };
@@ -315,7 +385,7 @@ export default function Home() {
 
       if (state.action === "idle") {
         if (!state.afk || !hasWoodcuttingAxe(state)) return state;
-        if (inventorySlotsUsed(state) >= MAX_INVENTORY_SLOTS) return itemCount(state.inventoryItems,"logs") > 0 ? moveToBank(state,now) : { ...state, afk:false };
+        if (inventorySlotsUsed(state) >= MAX_INVENTORY_SLOTS) return inventoryItemCount(state.inventorySlots,"logs") > 0 ? moveToBank(state,now) : { ...state, afk:false };
         return moveToNextTree(state,now);
       }
       if (state.action === "walking-point") return { ...state, action:"idle", nextActionAt:0 };
@@ -328,7 +398,7 @@ export default function Home() {
       }
       if (state.action === "chopping") {
         if (!hasWoodcuttingAxe(state)) return { ...state, action:"idle", afk:false, targetTreeId:null };
-        if (inventorySlotsUsed(state) >= MAX_INVENTORY_SLOTS) return state.afk && itemCount(state.inventoryItems,"logs") > 0 ? moveToBank(state,now) : { ...state, action:"idle", targetTreeId:null };
+        if (inventorySlotsUsed(state) >= MAX_INVENTORY_SLOTS) return state.afk && inventoryItemCount(state.inventorySlots,"logs") > 0 ? moveToBank(state,now) : { ...state, action:"idle", targetTreeId:null };
         const index = state.trees.findIndex(item => item.id === state.targetTreeId);
         const tree = state.trees[index];
         if (!tree || tree.charges <= 0) return state.afk ? moveToNextTree(state,now) : { ...state, action:"idle", targetTreeId:null };
@@ -339,15 +409,15 @@ export default function Home() {
         const remaining = tree.charges - logsGained;
         const trees = state.trees.slice();
         trees[index] = { ...tree, charges:remaining, respawnAt:remaining === 0 ? now + RESPAWN_MS : 0 };
-        state = { ...state, trees, inventoryItems:setItemCount(state.inventoryItems,"logs",itemCount(state.inventoryItems,"logs")+logsGained), xp:Math.min(MAX_XP,state.xp + LOG_XP * logsGained) };
+        state = { ...state, trees, inventorySlots:addInventoryItems(state.inventorySlots,"logs",logsGained), xp:Math.min(MAX_XP,state.xp + LOG_XP * logsGained) };
         if (inventorySlotsUsed(state) >= MAX_INVENTORY_SLOTS) return state.afk ? moveToBank(state,now) : { ...state, action:"idle", targetTreeId:null };
         if (remaining === 0) return state.afk ? moveToNextTree(state,now) : { ...state, action:"idle", targetTreeId:null };
         return { ...state, nextActionAt:now + CHOP_MS };
       }
       if (state.action === "walking-bank") return { ...state, action:"banking", nextActionAt:now + 650 };
       if (state.action === "banking") {
-        const logs = itemCount(state.inventoryItems,"logs");
-        state = { ...state, bankItems:setItemCount(state.bankItems,"logs",itemCount(state.bankItems,"logs")+logs), inventoryItems:setItemCount(state.inventoryItems,"logs",0) };
+        const logs = inventoryItemCount(state.inventorySlots,"logs");
+        state = { ...state, bankItems:setItemCount(state.bankItems,"logs",itemCount(state.bankItems,"logs")+logs), inventorySlots:removeInventoryItems(state.inventorySlots,"logs",logs) };
         return state.afk && hasWoodcuttingAxe(state) ? moveToNextTree(state,now) : { ...state, action:"idle", nextActionAt:0 };
       }
       return state;
@@ -361,17 +431,16 @@ export default function Home() {
   const xpProgress = level >= 99 ? 100 : Math.max(0,Math.min(100,((game.xp-levelStart)/(nextLevelXp-levelStart))*100));
   const actionProgress = game.action === "chopping" ? Math.max(4,Math.min(100,(1-(game.nextActionAt-game.now)/CHOP_MS)*100)) : xpProgress;
   const inventoryUsed = inventorySlotsUsed(game);
-  const inventoryLogs = itemCount(game.inventoryItems,"logs");
+  const inventoryLogs = inventoryItemCount(game.inventorySlots,"logs");
   const bankLogs = itemCount(game.bankItems,"logs");
-  const firstInventoryItem = (Object.keys(ITEMS) as ItemId[]).find(id => itemCount(game.inventoryItems,id)>0) ?? null;
+  const firstInventoryItem = game.inventorySlots.find((item):item is ItemId => Boolean(item)) ?? null;
   const equippedCount = Object.values(game.equipment).filter(Boolean).length;
   const currentAxe = equippedAxe(game);
   const selectedItem = ITEMS[selectedBankItem];
   const selectedItemEquipped = selectedBankItem !== "logs" && Object.values(game.equipment).includes(selectedBankItem as GearId);
-  const selectedItemInPack = itemCount(game.inventoryItems,selectedBankItem)>0;
+  const selectedItemInPack = inventoryItemCount(game.inventorySlots,selectedBankItem)>0;
   const selectedItemInBank = itemCount(game.bankItems,selectedBankItem)>0;
   const bankCatalog = (Object.keys(ITEMS) as ItemId[]).filter(id => itemCount(game.bankItems,id)>0);
-  const inventoryCatalog = (Object.keys(ITEMS) as ItemId[]).flatMap(id => Array.from({length:itemCount(game.inventoryItems,id)},() => id));
   const actionText = useMemo(() => {
     if (game.action === "walking-point") return "Walking across the wood";
     if (game.action === "walking-tree") return "Walking to a tree";
@@ -409,14 +478,14 @@ export default function Home() {
   };
 
   const depositInventoryItem = (item:ItemId,requested:number) => {
-    const available = itemCount(game.inventoryItems,item);
+    const available = inventoryItemCount(game.inventorySlots,item);
     const amount = Math.min(Math.max(0,Math.floor(requested)),available);
     if (amount <= 0) { setGearNotice(`No ${ITEMS[item].name.toLowerCase()} to deposit.`); return; }
     setGame(previous => {
-      const safeAmount = Math.min(amount,itemCount(previous.inventoryItems,item));
+      const safeAmount = Math.min(amount,inventoryItemCount(previous.inventorySlots,item));
       if (safeAmount <= 0) return previous;
       return {...previous,bankItems:setItemCount(previous.bankItems,item,itemCount(previous.bankItems,item)+safeAmount),
-        inventoryItems:setItemCount(previous.inventoryItems,item,itemCount(previous.inventoryItems,item)-safeAmount),now:Date.now()};
+        inventorySlots:removeInventoryItems(previous.inventorySlots,item,safeAmount),now:Date.now()};
     });
     setGearNotice(`${amount} ${amount===1 ? ITEMS[item].name : ITEMS[item].name.toLowerCase()} deposited.`);
   };
@@ -425,10 +494,10 @@ export default function Home() {
     if (inventoryUsed <= 0) { setGearNotice("Your inventory is already empty."); return; }
     setGame(previous => {
       const bankItems = (Object.keys(ITEMS) as ItemId[]).reduce<ItemCounts>((items,id) => {
-        const amount = itemCount(previous.inventoryItems,id);
+        const amount = inventoryItemCount(previous.inventorySlots,id);
         return amount > 0 ? setItemCount(items,id,itemCount(items,id)+amount) : items;
       },previous.bankItems);
-      return {...previous,bankItems,inventoryItems:{},now:Date.now()};
+      return {...previous,bankItems,inventorySlots:Array<ItemId|null>(MAX_INVENTORY_SLOTS).fill(null),now:Date.now()};
     });
     setGearNotice(`${inventoryUsed} inventory ${inventoryUsed===1 ? "item" : "items"} deposited.`);
     setBankMenu(null);
@@ -446,11 +515,13 @@ export default function Home() {
     const item = GEAR[id];
     if (item.requiredLevel > level) { setGearNotice(`${item.name} requires Woodcutting level ${item.requiredLevel}.`); setPanel("equipment"); return; }
     setGame(previous => {
-      if (itemCount(previous.inventoryItems,id) < 1) return previous;
-      let inventoryItems = setItemCount(previous.inventoryItems,id,itemCount(previous.inventoryItems,id)-1);
+      const inventoryIndex = previous.inventorySlots.indexOf(id);
+      if (inventoryIndex < 0) return previous;
+      let inventorySlots = previous.inventorySlots.slice();
+      inventorySlots[inventoryIndex]=null;
       const replaced = previous.equipment[item.slot];
-      if (replaced) inventoryItems=setItemCount(inventoryItems,replaced,itemCount(inventoryItems,replaced)+1);
-      return { ...previous, equipment:{...previous.equipment,[item.slot]:id}, inventoryItems, now:Date.now() };
+      if (replaced) inventorySlots=addInventoryItems(inventorySlots,replaced,1);
+      return { ...previous, equipment:{...previous.equipment,[item.slot]:id}, inventorySlots, now:Date.now() };
     });
     setGearNotice(`${item.name} equipped.`);
     setPanel("equipment");
@@ -463,7 +534,7 @@ export default function Home() {
       const id = previous.equipment[slot];
       if (!id || inventorySlotsUsed(previous) >= MAX_INVENTORY_SLOTS) return previous;
       const removingAxe = slot === "weapon";
-      return { ...previous, equipment:{...previous.equipment,[slot]:null}, inventoryItems:setItemCount(previous.inventoryItems,id,itemCount(previous.inventoryItems,id)+1),
+      return { ...previous, equipment:{...previous.equipment,[slot]:null}, inventorySlots:addInventoryItems(previous.inventorySlots,id,1),
         afk:removingAxe ? false : previous.afk, action:removingAxe ? "idle" : previous.action,
         targetTreeId:removingAxe ? null : previous.targetTreeId, nextActionAt:removingAxe ? 0 : previous.nextActionAt, now:Date.now() };
     });
@@ -482,7 +553,7 @@ export default function Home() {
       const safeAmount = Math.min(amount,MAX_INVENTORY_SLOTS-inventorySlotsUsed(previous),itemCount(previous.bankItems,item));
       if (safeAmount <= 0) return previous;
       return {...previous,bankItems:setItemCount(previous.bankItems,item,itemCount(previous.bankItems,item)-safeAmount),
-        inventoryItems:setItemCount(previous.inventoryItems,item,itemCount(previous.inventoryItems,item)+safeAmount),now:Date.now()};
+        inventorySlots:addInventoryItems(previous.inventorySlots,item,safeAmount),now:Date.now()};
     });
     setGearNotice(`${amount} ${amount===1 ? ITEMS[item].name : ITEMS[item].name.toLowerCase()} withdrawn.`);
     setBankMenu(null);
@@ -502,6 +573,13 @@ export default function Home() {
     if (bankMenu.mode === "withdraw") withdrawBankItem(bankMenu.item,requested);
     else { depositInventoryItem(bankMenu.item,requested); setBankMenu(null); }
   };
+
+  const moveInventorySlot = (from:number,to:number) => setGame(previous => {
+    if (from===to || from<0 || to<0 || from>=MAX_INVENTORY_SLOTS || to>=MAX_INVENTORY_SLOTS || !previous.inventorySlots[from]) return previous;
+    const inventorySlots = previous.inventorySlots.slice();
+    [inventorySlots[from],inventorySlots[to]]=[inventorySlots[to],inventorySlots[from]];
+    return {...previous,inventorySlots,now:Date.now()};
+  });
 
   const walkToPoint = (event:ReactMouseEvent<HTMLDivElement>) => {
     if ((event.target as HTMLElement).closest("button")) return;
@@ -597,18 +675,10 @@ export default function Home() {
               </div>
               {bankCompanionPanel === "inventory" ? <div className="bank-pack-panel">
                 <div className="bank-pack-heading"><div><strong>Inventory</strong><small>{inventoryUsed} / 28 slots</small></div><b>{28-inventoryUsed}</b></div>
-                <div className="bank-inventory-grid" aria-label="Inventory items available to deposit">
-                  {Array.from({length:28}).map((_,index) => {
-                    const itemId = inventoryCatalog[index];
-                    return itemId ? <button type="button" className="bank-inventory-slot bank-inventory-slot--filled" key={index}
-                      onClick={() => {setSelectedBankItem(itemId);depositInventoryItem(itemId,1);}}
-                      onContextMenu={event => {setSelectedBankItem(itemId);openBankMenu(event,itemId,"deposit");}}
-                      title={`${ITEMS[itemId].name} — left-click deposits 1, right-click for more options`}>
-                      <ItemIcon id={itemId}/><span>1</span><small className="sr-only">Deposit {ITEMS[itemId].name}</small>
-                    </button> : <span className="bank-inventory-slot" key={index}/>;
-                  })}
-                </div>
-                <p>Click an item to deposit one. Right-click for quantity options.</p>
+                <InventoryGrid slots={game.inventorySlots} level={level} mode="deposit" onMove={moveInventorySlot}
+                  onActivate={itemId => {setSelectedBankItem(itemId);depositInventoryItem(itemId,1);}}
+                  onItemContext={(event,itemId) => {setSelectedBankItem(itemId);openBankMenu(event,itemId,"deposit");}}/>
+                <p>Drag items to rearrange. Click to deposit one, or right-click for quantity options.</p>
                 <button type="button" className="bank-deposit-all" disabled={inventoryUsed===0} onClick={depositEntireInventory}>Deposit all inventory</button>
               </div> : <div className="bank-equipment-panel">
                 <div className="bank-pack-heading"><div><strong>Equipment</strong><small>{equippedCount} items equipped</small></div><b>{equippedCount}</b></div>
@@ -630,11 +700,11 @@ export default function Home() {
               <button type="button" onClick={() => transferFromBankMenu(1)}>{bankMenu.mode === "withdraw" ? "Withdraw" : "Deposit"} 1</button>
               <button type="button" onClick={() => transferFromBankMenu(5)}>{bankMenu.mode === "withdraw" ? "Withdraw" : "Deposit"} 5</button>
               <button type="button" onClick={() => transferFromBankMenu(10)}>{bankMenu.mode === "withdraw" ? "Withdraw" : "Deposit"} 10</button>
-              <button type="button" onClick={() => transferFromBankMenu(itemCount(bankMenu.mode === "withdraw" ? game.bankItems : game.inventoryItems,bankMenu.item))}>{bankMenu.mode === "withdraw" ? "Withdraw" : "Deposit"} all</button>
+              <button type="button" onClick={() => transferFromBankMenu(bankMenu.mode === "withdraw" ? itemCount(game.bankItems,bankMenu.item) : inventoryItemCount(game.inventorySlots,bankMenu.item))}>{bankMenu.mode === "withdraw" ? "Withdraw" : "Deposit"} all</button>
               <button type="button" onClick={() => setBankMenu({...bankMenu,custom:true})}>Custom amount…</button>
               <button type="button" className="bank-menu-cancel" onClick={() => setBankMenu(null)}>Cancel</button>
             </> : <form onSubmit={event => {event.preventDefault();transferFromBankMenu(Number(customWithdrawAmount));}}>
-              <label htmlFor="custom-withdraw">Amount</label><input id="custom-withdraw" type="number" min="1" max={itemCount(bankMenu.mode === "withdraw" ? game.bankItems : game.inventoryItems,bankMenu.item)} value={customWithdrawAmount} onChange={event => setCustomWithdrawAmount(event.target.value)}/>
+              <label htmlFor="custom-withdraw">Amount</label><input id="custom-withdraw" type="number" min="1" max={bankMenu.mode === "withdraw" ? itemCount(game.bankItems,bankMenu.item) : inventoryItemCount(game.inventorySlots,bankMenu.item)} value={customWithdrawAmount} onChange={event => setCustomWithdrawAmount(event.target.value)}/>
               <div><button type="submit">{bankMenu.mode === "withdraw" ? "Withdraw" : "Deposit"}</button><button type="button" onClick={() => setBankMenu({...bankMenu,custom:false})}>Back</button></div>
             </form>}
           </div>}
@@ -656,7 +726,9 @@ export default function Home() {
           {!panelMinimized && <div className="inventory-panel">
             {panel === "inventory" ? <>
               <div className="panel-heading"><div><span>Inventory</span><small>{inventoryUsed} / 28 slots</small></div><b>{28-inventoryUsed}</b></div>
-              <InventoryGrid items={game.inventoryItems} level={level} onEquip={equipGear}/>
+              <InventoryGrid slots={game.inventorySlots} level={level} onMove={moveInventorySlot}
+                onActivate={itemId => ITEMS[itemId].kind!=="resource" && equipGear(itemId as GearId)}/>
+              <p className="inventory-help">Drag items to rearrange your pack.</p>
               <div className="item-detail">{firstInventoryItem ? <><ItemIcon id={firstInventoryItem} small/><div><strong>{ITEMS[firstInventoryItem].name}</strong><small>{firstInventoryItem === "logs" ? `${inventoryLogs} ready to bank` : ITEMS[firstInventoryItem].description}</small></div></> : <><LogIcon small/><div><strong>Empty pack</strong><small>Your pack is ready</small></div></>}</div>
             </> : panel === "skills" ? <div className="skill-panel">
               <div className="panel-heading"><div><span>Skills</span><small>1 skill available</small></div><b>1</b></div>
