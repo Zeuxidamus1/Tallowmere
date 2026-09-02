@@ -22,6 +22,7 @@ type ArmorId = "leather-cap" | "traveler-tunic" | "wooden-buckler" | "worn-trous
 type GearId = AxeId | ArmorId;
 type ItemId = "logs" | GearId;
 type BankItemId = ItemId;
+type BankMenuMode = "withdraw" | "deposit";
 type ItemCounts = Partial<Record<ItemId,number>>;
 type GearItem = { id:GearId; name:string; slot:EquipmentSlot; description:string; kind:"axe"|"armor"; requiredLevel:number };
 type AxeItem = GearItem & { id:AxeId; kind:"axe"; bonusChance:number; metal:string; edge:string; handle:string; shape:number };
@@ -199,7 +200,9 @@ function GearIcon({ id, small=false }:{id:GearId;small?:boolean}) {
 }
 
 function ItemIcon({ id, small=false }:{id:ItemId;small?:boolean}) {
-  return id === "logs" ? <LogIcon small={small}/> : <GearIcon id={id} small={small}/>;
+  if (id === "logs") return <LogIcon small={small}/>;
+  if (ITEMS[id].kind === "resource") return <span className={`resource-icon resource-icon--${id} ${small ? "resource-icon--small" : ""}`} aria-hidden="true"><i/><b/></span>;
+  return <GearIcon id={id as GearId} small={small}/>;
 }
 
 function InventoryGrid({ items, level, onEquip }:{items:ItemCounts;level:number;onEquip:(id:GearId)=>void}) {
@@ -208,11 +211,12 @@ function InventoryGrid({ items, level, onEquip }:{items:ItemCounts;level:number;
   return <div className="inventory-grid" aria-label={`Inventory, ${used} of 28 slots used`}>
     {Array.from({length:28}).map((_,index) => {
       const itemId = inventory[index];
-      if (itemId && itemId !== "logs") {
-        const locked = GEAR[itemId].requiredLevel > level;
+      if (itemId && ITEMS[itemId].kind !== "resource") {
+        const gearId = itemId as GearId;
+        const locked = GEAR[gearId].requiredLevel > level;
         return <button className={`inventory-slot inventory-slot--filled inventory-slot--gear ${locked ? "inventory-slot--locked" : ""}`} type="button" key={index}
-        onClick={() => onEquip(itemId)} title={locked ? `${GEAR[itemId].name} requires Woodcutting ${GEAR[itemId].requiredLevel}` : `Equip ${GEAR[itemId].name}`} aria-label={locked ? `${GEAR[itemId].name}, locked until Woodcutting level ${GEAR[itemId].requiredLevel}` : `Equip ${GEAR[itemId].name}`}>
-        <GearIcon id={itemId}/><span className="inventory-equip-mark">{locked ? GEAR[itemId].requiredLevel : "+"}</span>
+        onClick={() => onEquip(gearId)} title={locked ? `${GEAR[gearId].name} requires Woodcutting ${GEAR[gearId].requiredLevel}` : `Equip ${GEAR[gearId].name}`} aria-label={locked ? `${GEAR[gearId].name}, locked until Woodcutting level ${GEAR[gearId].requiredLevel}` : `Equip ${GEAR[gearId].name}`}>
+        <GearIcon id={gearId}/><span className="inventory-equip-mark">{locked ? GEAR[gearId].requiredLevel : "+"}</span>
       </button>;
       }
       return <div className={`inventory-slot ${itemId ? "inventory-slot--filled" : ""}`} key={index}>
@@ -242,7 +246,8 @@ export default function Home() {
   const [moveMarker, setMoveMarker] = useState<{x:number;y:number} | null>(null);
   const [gearNotice, setGearNotice] = useState("Click a filled slot to unequip it.");
   const [selectedBankItem, setSelectedBankItem] = useState<ItemId>("iron-hatchet");
-  const [bankMenu, setBankMenu] = useState<{item:BankItemId;x:number;y:number;custom:boolean} | null>(null);
+  const [bankCompanionPanel, setBankCompanionPanel] = useState<"inventory"|"equipment">("inventory");
+  const [bankMenu, setBankMenu] = useState<{item:BankItemId;mode:BankMenuMode;x:number;y:number;custom:boolean} | null>(null);
   const [customWithdrawAmount, setCustomWithdrawAmount] = useState("1");
   const latestGame = useRef(game);
 
@@ -366,6 +371,7 @@ export default function Home() {
   const selectedItemInPack = itemCount(game.inventoryItems,selectedBankItem)>0;
   const selectedItemInBank = itemCount(game.bankItems,selectedBankItem)>0;
   const bankCatalog = (Object.keys(ITEMS) as ItemId[]).filter(id => itemCount(game.bankItems,id)>0);
+  const inventoryCatalog = (Object.keys(ITEMS) as ItemId[]).flatMap(id => Array.from({length:itemCount(game.inventoryItems,id)},() => id));
   const actionText = useMemo(() => {
     if (game.action === "walking-point") return "Walking across the wood";
     if (game.action === "walking-tree") return "Walking to a tree";
@@ -415,7 +421,18 @@ export default function Home() {
     setGearNotice(`${amount} ${amount===1 ? ITEMS[item].name : ITEMS[item].name.toLowerCase()} deposited.`);
   };
 
-  const depositInventoryLogs = () => depositInventoryItem("logs",inventoryLogs);
+  const depositEntireInventory = () => {
+    if (inventoryUsed <= 0) { setGearNotice("Your inventory is already empty."); return; }
+    setGame(previous => {
+      const bankItems = (Object.keys(ITEMS) as ItemId[]).reduce<ItemCounts>((items,id) => {
+        const amount = itemCount(previous.inventoryItems,id);
+        return amount > 0 ? setItemCount(items,id,itemCount(items,id)+amount) : items;
+      },previous.bankItems);
+      return {...previous,bankItems,inventoryItems:{},now:Date.now()};
+    });
+    setGearNotice(`${inventoryUsed} inventory ${inventoryUsed===1 ? "item" : "items"} deposited.`);
+    setBankMenu(null);
+  };
 
   const begin = () => {
     setWelcome(false);
@@ -471,13 +488,19 @@ export default function Home() {
     setBankMenu(null);
   };
 
-  const openBankMenu = (event:ReactMouseEvent<HTMLElement>,item:BankItemId) => {
+  const openBankMenu = (event:ReactMouseEvent<HTMLElement>,item:BankItemId,mode:BankMenuMode) => {
     event.preventDefault(); event.stopPropagation();
     const panelBounds = event.currentTarget.closest(".bank-panel")?.getBoundingClientRect();
     if (!panelBounds) return;
     setCustomWithdrawAmount("1");
-    setBankMenu({item,x:Math.max(6,Math.min(panelBounds.width-174,event.clientX-panelBounds.left)),
+    setBankMenu({item,mode,x:Math.max(6,Math.min(panelBounds.width-174,event.clientX-panelBounds.left)),
       y:Math.max(36,Math.min(panelBounds.height-222,event.clientY-panelBounds.top)),custom:false});
+  };
+
+  const transferFromBankMenu = (requested:number) => {
+    if (!bankMenu) return;
+    if (bankMenu.mode === "withdraw") withdrawBankItem(bankMenu.item,requested);
+    else { depositInventoryItem(bankMenu.item,requested); setBankMenu(null); }
   };
 
   const walkToPoint = (event:ReactMouseEvent<HTMLDivElement>) => {
@@ -548,34 +571,71 @@ export default function Home() {
 
         {bankOpen && <aside className="bank-panel bank-panel--vault" aria-label="Tallowmere bank interior">
           <div className="bank-classic-title"><span>{formatNumber(bankLogs)}</span><strong>The Bank of Tallowmere</strong><button type="button" onClick={() => {setBankOpen(false);setBankMenu(null);}} aria-label="Close bank">×</button></div>
-          <div className="bank-classic-grid" aria-label="Stored items">
-            {bankCatalog.map(id => {
-              const item = ITEMS[id];
-              const inBank = itemCount(game.bankItems,id);
-              const locked = level < item.requiredLevel;
-              return <button className={`bank-item ${id==="logs" ? "bank-item--logs" : "bank-item--item"} ${locked ? "bank-item--locked" : ""} ${selectedBankItem===id ? "bank-item--selected" : ""}`} type="button" key={id}
-                onClick={() => {setSelectedBankItem(id);withdrawBankItem(id,1);}} onContextMenu={event => {setSelectedBankItem(id);openBankMenu(event,id);}}
-                title={`${item.name} — left-click withdraws 1, right-click for more options`}>
-                <ItemIcon id={id}/><span>{id==="logs" ? formatNumber(inBank) : `Lv ${item.requiredLevel}`}</span><small>{formatNumber(inBank)}</small>
-              </button>;
-            })}
+          <div className="bank-workspace">
+            <div className="bank-vault-main">
+              <div className="bank-classic-grid" aria-label="Stored items">
+                {bankCatalog.map(id => {
+                  const item = ITEMS[id];
+                  const inBank = itemCount(game.bankItems,id);
+                  const locked = level < item.requiredLevel;
+                  return <button className={`bank-item ${id==="logs" ? "bank-item--logs" : "bank-item--item"} ${locked ? "bank-item--locked" : ""} ${selectedBankItem===id ? "bank-item--selected" : ""}`} type="button" key={id}
+                    onClick={() => {setSelectedBankItem(id);withdrawBankItem(id,1);}} onContextMenu={event => {setSelectedBankItem(id);openBankMenu(event,id,"withdraw");}}
+                    title={`${item.name} — left-click withdraws 1, right-click for more options`}>
+                    <ItemIcon id={id}/><span>{id==="logs" ? formatNumber(inBank) : `Lv ${item.requiredLevel}`}</span><small>{formatNumber(inBank)}</small>
+                  </button>;
+                })}
+              </div>
+              <div className="bank-selected-item"><ItemIcon id={selectedItem.id}/><div><small>SELECTED ITEM</small><strong>{selectedItem.name}</strong><span>{selectedItem.kind==="axe" ? `Woodcutting ${selectedItem.requiredLevel} · ${Math.round(AXE_BY_ID[selectedItem.id as AxeId].bonusChance*100)}% extra-log chance` : selectedItem.description}</span></div>
+                {selectedItemEquipped ? <button type="button" disabled>Equipped</button> : selectedItemInBank ? <button type="button" onClick={() => withdrawBankItem(selectedBankItem,1)}>Withdraw 1</button> : selectedItemInPack ? <button type="button" onClick={() => depositInventoryItem(selectedBankItem,1)}>Store 1</button> : <button type="button" disabled>Unavailable</button>}
+              </div>
+              <div className="bank-classic-controls"><button type="button" className="bank-deposit" disabled={inventoryUsed===0} onClick={depositEntireInventory}>{inventoryUsed>0 ? `Deposit inventory (${inventoryUsed})` : "Inventory empty"}</button><span>{gearNotice}</span><small>Bank: left withdraws · right opens options</small></div>
+            </div>
+            <div className="bank-companion" aria-label="Inventory and equipment">
+              <div className="bank-companion-tabs">
+                <button type="button" className={bankCompanionPanel==="inventory" ? "bank-companion-tab--active" : ""} onClick={() => setBankCompanionPanel("inventory")}><span className="tab-bag"><i/></span>Inventory</button>
+                <button type="button" className={bankCompanionPanel==="equipment" ? "bank-companion-tab--active" : ""} onClick={() => setBankCompanionPanel("equipment")}><span className="tab-equipment"><i/><b/></span>Equipment</button>
+              </div>
+              {bankCompanionPanel === "inventory" ? <div className="bank-pack-panel">
+                <div className="bank-pack-heading"><div><strong>Inventory</strong><small>{inventoryUsed} / 28 slots</small></div><b>{28-inventoryUsed}</b></div>
+                <div className="bank-inventory-grid" aria-label="Inventory items available to deposit">
+                  {Array.from({length:28}).map((_,index) => {
+                    const itemId = inventoryCatalog[index];
+                    return itemId ? <button type="button" className="bank-inventory-slot bank-inventory-slot--filled" key={index}
+                      onClick={() => {setSelectedBankItem(itemId);depositInventoryItem(itemId,1);}}
+                      onContextMenu={event => {setSelectedBankItem(itemId);openBankMenu(event,itemId,"deposit");}}
+                      title={`${ITEMS[itemId].name} — left-click deposits 1, right-click for more options`}>
+                      <ItemIcon id={itemId}/><span>1</span><small className="sr-only">Deposit {ITEMS[itemId].name}</small>
+                    </button> : <span className="bank-inventory-slot" key={index}/>;
+                  })}
+                </div>
+                <p>Click an item to deposit one. Right-click for quantity options.</p>
+                <button type="button" className="bank-deposit-all" disabled={inventoryUsed===0} onClick={depositEntireInventory}>Deposit all inventory</button>
+              </div> : <div className="bank-equipment-panel">
+                <div className="bank-pack-heading"><div><strong>Equipment</strong><small>{equippedCount} items equipped</small></div><b>{equippedCount}</b></div>
+                <div className="equipment-layout">
+                  <span className="equipment-person" aria-hidden="true"><i/><b/><em/></span>
+                  <GearSlot slot="head" itemId={game.equipment.head} onUnequip={unequipGear}/>
+                  <GearSlot slot="body" itemId={game.equipment.body} onUnequip={unequipGear}/>
+                  <GearSlot slot="legs" itemId={game.equipment.legs} onUnequip={unequipGear}/>
+                  <GearSlot slot="shield" itemId={game.equipment.shield} onUnequip={unequipGear}/>
+                  <GearSlot slot="weapon" itemId={game.equipment.weapon} onUnequip={unequipGear}/>
+                </div>
+                <p>Click equipped gear to move it into your inventory.</p>
+              </div>}
+            </div>
           </div>
-          <div className="bank-selected-item"><ItemIcon id={selectedItem.id}/><div><small>SELECTED ITEM</small><strong>{selectedItem.name}</strong><span>{selectedItem.kind==="axe" ? `Woodcutting ${selectedItem.requiredLevel} · ${Math.round(AXE_BY_ID[selectedItem.id as AxeId].bonusChance*100)}% extra-log chance` : selectedItem.description}</span></div>
-            {selectedItemEquipped ? <button type="button" disabled>Equipped</button> : selectedItemInBank ? <button type="button" onClick={() => withdrawBankItem(selectedBankItem,1)}>Withdraw 1</button> : selectedItemInPack ? <button type="button" onClick={() => depositInventoryItem(selectedBankItem,1)}>Store 1</button> : <button type="button" disabled>Unavailable</button>}
-          </div>
-          <div className="bank-classic-controls"><button type="button" className="bank-deposit" disabled={inventoryLogs===0} onClick={depositInventoryLogs}>{inventoryLogs>0 ? `Deposit ${inventoryLogs} logs` : "No logs to deposit"}</button><span>{gearNotice}</span><small>Left: 1 · Right: options</small></div>
           {bankMenu && <div className="bank-context-menu" style={{left:bankMenu.x,top:bankMenu.y}}>
             <strong>{ITEMS[bankMenu.item].name}</strong>
             {!bankMenu.custom ? <>
-              <button type="button" onClick={() => withdrawBankItem(bankMenu.item,1)}>Withdraw 1</button>
-              <button type="button" onClick={() => withdrawBankItem(bankMenu.item,5)}>Withdraw 5</button>
-              <button type="button" onClick={() => withdrawBankItem(bankMenu.item,10)}>Withdraw 10</button>
-              <button type="button" onClick={() => withdrawBankItem(bankMenu.item,itemCount(game.bankItems,bankMenu.item))}>Withdraw all</button>
+              <button type="button" onClick={() => transferFromBankMenu(1)}>{bankMenu.mode === "withdraw" ? "Withdraw" : "Deposit"} 1</button>
+              <button type="button" onClick={() => transferFromBankMenu(5)}>{bankMenu.mode === "withdraw" ? "Withdraw" : "Deposit"} 5</button>
+              <button type="button" onClick={() => transferFromBankMenu(10)}>{bankMenu.mode === "withdraw" ? "Withdraw" : "Deposit"} 10</button>
+              <button type="button" onClick={() => transferFromBankMenu(itemCount(bankMenu.mode === "withdraw" ? game.bankItems : game.inventoryItems,bankMenu.item))}>{bankMenu.mode === "withdraw" ? "Withdraw" : "Deposit"} all</button>
               <button type="button" onClick={() => setBankMenu({...bankMenu,custom:true})}>Custom amount…</button>
               <button type="button" className="bank-menu-cancel" onClick={() => setBankMenu(null)}>Cancel</button>
-            </> : <form onSubmit={event => {event.preventDefault();withdrawBankItem(bankMenu.item,Number(customWithdrawAmount));}}>
-              <label htmlFor="custom-withdraw">Amount</label><input id="custom-withdraw" type="number" min="1" max={itemCount(game.bankItems,bankMenu.item)} value={customWithdrawAmount} onChange={event => setCustomWithdrawAmount(event.target.value)}/>
-              <div><button type="submit">Withdraw</button><button type="button" onClick={() => setBankMenu({...bankMenu,custom:false})}>Back</button></div>
+            </> : <form onSubmit={event => {event.preventDefault();transferFromBankMenu(Number(customWithdrawAmount));}}>
+              <label htmlFor="custom-withdraw">Amount</label><input id="custom-withdraw" type="number" min="1" max={itemCount(bankMenu.mode === "withdraw" ? game.bankItems : game.inventoryItems,bankMenu.item)} value={customWithdrawAmount} onChange={event => setCustomWithdrawAmount(event.target.value)}/>
+              <div><button type="submit">{bankMenu.mode === "withdraw" ? "Withdraw" : "Deposit"}</button><button type="button" onClick={() => setBankMenu({...bankMenu,custom:false})}>Back</button></div>
             </form>}
           </div>}
         </aside>}
@@ -586,7 +646,7 @@ export default function Home() {
           <div className="xp-bar" title={game.action==="chopping" ? "Chop progress" : "Level progress"}><span style={{width:`${actionProgress}%`}}/></div>
         </div>
 
-        <aside className={`side-panel ${panelMinimized ? "side-panel--minimized" : ""}`}>
+        <aside className={`side-panel ${panelMinimized ? "side-panel--minimized" : ""} ${bankOpen ? "side-panel--bank-open" : ""}`}>
           <div className="panel-tabs" aria-label="Game panels">
             <button className="panel-minimize" type="button" aria-label={panelMinimized ? "Open game panel" : "Minimize game panel"} aria-expanded={!panelMinimized} onClick={() => setPanelMinimized(value => !value)}>{panelMinimized ? "▴" : "—"}</button>
             <button className={`panel-tab ${panel==="skills" ? "panel-tab--active" : ""}`} type="button" aria-label="Woodcutting skill" aria-pressed={panel==="skills"} onClick={() => {setPanel("skills");setPanelMinimized(false);}}><span className="tab-axe"><i/><b/></span></button>

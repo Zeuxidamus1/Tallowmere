@@ -23,6 +23,8 @@
 - The clickable bank includes a compact classic-RPG item grid, all 20 axe tiers, level locks, selected-item details, and wield/store controls.
 - Bank contents and inventory contents now use one shared item-count system. Every registered item automatically supports left-click withdrawal of 1 and a right-click menu for 1, 5, 10, all, or a custom amount, subject to the 28-slot inventory limit.
 - Bank slots represent only items actually stored in the bank. When the last copy is withdrawn or equipped, that slot disappears until a copy is deposited again.
+- Opening the bank now shows stored items beside a dedicated inventory/equipment companion panel, so banking no longer hides the player's pack or worn gear.
+- Every registered inventory item can be left-clicked to deposit one or right-clicked to deposit 1, 5, 10, all, or a custom amount. A universal deposit-all-inventory control is also available.
 - The skills, equipment, and inventory panel can be minimized to its tab strip and reopened from any tab.
 
 ## Visual direction
