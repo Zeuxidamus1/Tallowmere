@@ -20,14 +20,17 @@ type EquipmentSlot = "head" | "weapon" | "body" | "shield" | "legs";
 type AxeId = "bronze-axe" | "iron-hatchet" | "steel-feller" | "ashen-splitter" | "silverleaf-axe" | "deepforge-axe" | "briar-edge" | "emberbite" | "frostcleaver" | "storm-hew" | "moonsteel-axe" | "sunforged-axe" | "runebark-cutter" | "obsidian-beak" | "dragonbone-axe" | "spiritwood-crescent" | "starfall-axe" | "voidglass-axe" | "elder-king-axe" | "tallowmere-relic";
 type ArmorId = "leather-cap" | "traveler-tunic" | "wooden-buckler" | "worn-trousers";
 type GearId = AxeId | ArmorId;
+type ItemId = "logs" | GearId;
+type BankItemId = ItemId;
+type ItemCounts = Partial<Record<ItemId,number>>;
 type GearItem = { id:GearId; name:string; slot:EquipmentSlot; description:string; kind:"axe"|"armor"; requiredLevel:number };
 type AxeItem = GearItem & { id:AxeId; kind:"axe"; bonusChance:number; metal:string; edge:string; handle:string; shape:number };
 type EquipmentState = Record<EquipmentSlot,GearId | null>;
 type TreeState = { id: number; x: number; y: number; charges: number; maxCharges: number; respawnAt: number };
 type GameState = {
-  xp: number; inventoryLogs: number; bankLogs: number; afk: boolean; action: Action;
+  xp: number; inventoryItems:ItemCounts; bankItems:ItemCounts; afk: boolean; action: Action;
   targetTreeId: number | null; nextActionAt: number; characterX: number; characterY: number;
-  trees: TreeState[]; now: number; equipment:EquipmentState; inventoryGear:GearId[]; bankGear:AxeId[];
+  trees: TreeState[]; now: number; equipment:EquipmentState;
 };
 type OfflineSummary = { elapsed: number; logs: number; xp: number };
 
@@ -63,6 +66,10 @@ const ARMOR:GearItem[] = [
 
 const GEAR = Object.fromEntries([...AXES,...ARMOR].map(item => [item.id,item])) as Record<GearId,GearItem>;
 const AXE_BY_ID = Object.fromEntries(AXES.map(item => [item.id,item])) as Record<AxeId,AxeItem>;
+const ITEMS = {
+  logs:{id:"logs",name:"Logs",kind:"resource",description:"Freshly cut wood",requiredLevel:1},
+  ...GEAR,
+} as Record<ItemId,{id:ItemId;name:string;kind:"resource"|"axe"|"armor";description:string;requiredLevel:number}>;
 
 const STARTING_EQUIPMENT:EquipmentState = {
   head:"leather-cap", weapon:"bronze-axe", body:"traveler-tunic", shield:"wooden-buckler", legs:"worn-trousers",
@@ -76,13 +83,28 @@ function makeTrees(): TreeState[] {
 }
 
 function initialGame(): GameState {
-  return { xp:0, inventoryLogs:0, bankLogs:0, afk:true, action:"idle", targetTreeId:null,
+  const bankItems:ItemCounts = {logs:0};
+  AXES.filter(axe => axe.id !== "bronze-axe").forEach(axe => { bankItems[axe.id]=1; });
+  return { xp:0, inventoryItems:{}, bankItems, afk:true, action:"idle", targetTreeId:null,
     nextActionAt:0, characterX:55, characterY:45, trees:makeTrees(), now:Date.now(),
-    equipment:{...STARTING_EQUIPMENT}, inventoryGear:[], bankGear:AXES.filter(axe => axe.id !== "bronze-axe").map(axe => axe.id) };
+    equipment:{...STARTING_EQUIPMENT} };
 }
 
-function inventorySlotsUsed(state:Pick<GameState,"inventoryLogs"|"inventoryGear">) {
-  return state.inventoryLogs + state.inventoryGear.length;
+function itemCount(items:ItemCounts,id:ItemId) { return Math.max(0,Math.floor(items[id] ?? 0)); }
+function setItemCount(items:ItemCounts,id:ItemId,count:number):ItemCounts {
+  const next = {...items};
+  if (count > 0) next[id]=Math.floor(count); else delete next[id];
+  return next;
+}
+function normalizeItemCounts(value:unknown,fallback:ItemCounts={}):ItemCounts {
+  if (!value || typeof value !== "object") return {...fallback};
+  return Object.entries(value).reduce<ItemCounts>((counts,[id,count]) => {
+    if (id in ITEMS && typeof count === "number" && count > 0) counts[id as ItemId]=Math.floor(count);
+    return counts;
+  },{});
+}
+function inventorySlotsUsed(state:Pick<GameState,"inventoryItems">) {
+  return Object.values(state.inventoryItems).reduce((total,count) => total + Math.max(0,Math.floor(count ?? 0)),0);
 }
 
 function hasWoodcuttingAxe(state:Pick<GameState,"equipment">) {
@@ -176,22 +198,25 @@ function GearIcon({ id, small=false }:{id:GearId;small?:boolean}) {
   return <span className={`gear-icon gear-icon--${id} ${small ? "gear-icon--small" : ""}`} aria-hidden="true"><i/><b/></span>;
 }
 
-function InventoryGrid({ logs, gear, level, onEquip }:{logs:number;gear:GearId[];level:number;onEquip:(id:GearId)=>void}) {
-  const used = logs + gear.length;
+function ItemIcon({ id, small=false }:{id:ItemId;small?:boolean}) {
+  return id === "logs" ? <LogIcon small={small}/> : <GearIcon id={id} small={small}/>;
+}
+
+function InventoryGrid({ items, level, onEquip }:{items:ItemCounts;level:number;onEquip:(id:GearId)=>void}) {
+  const inventory = (Object.keys(ITEMS) as ItemId[]).flatMap(id => Array.from({length:itemCount(items,id)},() => id));
+  const used = inventory.length;
   return <div className="inventory-grid" aria-label={`Inventory, ${used} of 28 slots used`}>
     {Array.from({length:28}).map((_,index) => {
-      const gearId = gear[index];
-      const logIndex = index - gear.length;
-      const isLog = logIndex >= 0 && logIndex < logs;
-      if (gearId) {
-        const locked = GEAR[gearId].requiredLevel > level;
+      const itemId = inventory[index];
+      if (itemId && itemId !== "logs") {
+        const locked = GEAR[itemId].requiredLevel > level;
         return <button className={`inventory-slot inventory-slot--filled inventory-slot--gear ${locked ? "inventory-slot--locked" : ""}`} type="button" key={index}
-        onClick={() => onEquip(gearId)} title={locked ? `${GEAR[gearId].name} requires Woodcutting ${GEAR[gearId].requiredLevel}` : `Equip ${GEAR[gearId].name}`} aria-label={locked ? `${GEAR[gearId].name}, locked until Woodcutting level ${GEAR[gearId].requiredLevel}` : `Equip ${GEAR[gearId].name}`}>
-        <GearIcon id={gearId}/><span className="inventory-equip-mark">{locked ? GEAR[gearId].requiredLevel : "+"}</span>
+        onClick={() => onEquip(itemId)} title={locked ? `${GEAR[itemId].name} requires Woodcutting ${GEAR[itemId].requiredLevel}` : `Equip ${GEAR[itemId].name}`} aria-label={locked ? `${GEAR[itemId].name}, locked until Woodcutting level ${GEAR[itemId].requiredLevel}` : `Equip ${GEAR[itemId].name}`}>
+        <GearIcon id={itemId}/><span className="inventory-equip-mark">{locked ? GEAR[itemId].requiredLevel : "+"}</span>
       </button>;
       }
-      return <div className={`inventory-slot ${isLog ? "inventory-slot--filled" : ""}`} key={index}>
-        {isLog && <><LogIcon/><span className="item-amount">1</span><span className="sr-only">Logs</span></>}
+      return <div className={`inventory-slot ${itemId ? "inventory-slot--filled" : ""}`} key={index}>
+        {itemId && <><ItemIcon id={itemId}/><span className="item-amount">1</span><span className="sr-only">{ITEMS[itemId].name}</span></>}
       </div>;
     })}
   </div>;
@@ -216,7 +241,9 @@ export default function Home() {
   const [offline, setOffline] = useState<OfflineSummary | null>(null);
   const [moveMarker, setMoveMarker] = useState<{x:number;y:number} | null>(null);
   const [gearNotice, setGearNotice] = useState("Click a filled slot to unequip it.");
-  const [selectedBankAxe, setSelectedBankAxe] = useState<AxeId>("bronze-axe");
+  const [selectedBankItem, setSelectedBankItem] = useState<ItemId>("iron-hatchet");
+  const [bankMenu, setBankMenu] = useState<{item:BankItemId;x:number;y:number;custom:boolean} | null>(null);
+  const [customWithdrawAmount, setCustomWithdrawAmount] = useState("1");
   const latestGame = useRef(game);
 
   useEffect(() => { latestGame.current = game; }, [game]);
@@ -226,20 +253,30 @@ export default function Home() {
     try {
       const raw = localStorage.getItem(SAVE_KEY);
       if (raw) {
-        const saved = JSON.parse(raw) as Partial<GameState> & { lastSeen?:number };
+        const saved = JSON.parse(raw) as Partial<GameState> & { lastSeen?:number;inventoryLogs?:number;bankLogs?:number;inventoryGear?:GearId[];bankGear?:AxeId[] };
         const base = initialGame();
         const savedTrees = Array.isArray(saved.trees) && saved.trees.length === TREE_LAYOUT.length ? saved.trees : base.trees;
         const equipment:EquipmentState = saved.equipment ? { ...base.equipment,...saved.equipment } : base.equipment;
-        const inventoryGear = Array.isArray(saved.inventoryGear) ? saved.inventoryGear.filter(id => id in GEAR) : base.inventoryGear;
-        const bankGear = Array.isArray(saved.bankGear) ? saved.bankGear.filter(id => id in AXE_BY_ID) : base.bankGear;
+        let inventoryItems = normalizeItemCounts(saved.inventoryItems);
+        if (!saved.inventoryItems) {
+          inventoryItems = setItemCount(inventoryItems,"logs",saved.inventoryLogs ?? 0);
+          (saved.inventoryGear ?? []).filter(id => id in GEAR).forEach(id => { inventoryItems=setItemCount(inventoryItems,id,itemCount(inventoryItems,id)+1); });
+        }
+        let bankItems = normalizeItemCounts(saved.bankItems,base.bankItems);
+        if (!saved.bankItems) {
+          bankItems = setItemCount({},"logs",saved.bankLogs ?? 0);
+          const legacyBankGear = saved.bankGear ?? AXES.filter(axe => axe.id!=="bronze-axe").map(axe => axe.id);
+          legacyBankGear.filter(id => id in AXE_BY_ID).forEach(id => { bankItems=setItemCount(bankItems,id,itemCount(bankItems,id)+1); });
+        }
+        const excessSlots = Math.max(0,inventorySlotsUsed({inventoryItems})-MAX_INVENTORY_SLOTS);
+        if (excessSlots) inventoryItems=setItemCount(inventoryItems,"logs",Math.max(0,itemCount(inventoryItems,"logs")-excessSlots));
         const elapsed = Math.min(MAX_OFFLINE_MS, Math.max(0, now - (saved.lastSeen ?? now)));
         const offlineAxe = equipment.weapon && GEAR[equipment.weapon]?.kind === "axe" ? AXE_BY_ID[equipment.weapon as AxeId] : null;
         const offlineActions = saved.afk && offlineAxe && elapsed > 10_000 ? Math.floor(elapsed / 2400) : 0;
         const offlineLogs = offlineAxe ? Math.floor(offlineActions * (1 + offlineAxe.bonusChance)) : 0;
         const offlineXp = offlineLogs * LOG_XP;
-        setGame({ ...base, xp:Math.min(MAX_XP,(saved.xp ?? 0) + offlineXp),
-          inventoryLogs:Math.min(MAX_INVENTORY_SLOTS-inventoryGear.length,saved.inventoryLogs ?? 0), inventoryGear, equipment, bankGear,
-          bankLogs:(saved.bankLogs ?? 0) + offlineLogs, afk:saved.afk ?? true,
+        bankItems=setItemCount(bankItems,"logs",itemCount(bankItems,"logs")+offlineLogs);
+        setGame({ ...base, xp:Math.min(MAX_XP,(saved.xp ?? 0) + offlineXp),inventoryItems,bankItems,equipment,afk:saved.afk ?? true,
           characterX:saved.characterX ?? base.characterX, characterY:saved.characterY ?? base.characterY,
           trees:savedTrees.map((tree,index) => tree.respawnAt && tree.respawnAt <= now ? { ...tree, charges:tree.maxCharges || base.trees[index].maxCharges, respawnAt:0 } : tree), now });
         if (offlineLogs > 0) setOffline({ elapsed, logs:offlineLogs, xp:offlineXp });
@@ -253,9 +290,9 @@ export default function Home() {
     if (!hydrated) return;
     const save = () => {
       const current = latestGame.current;
-      localStorage.setItem(SAVE_KEY, JSON.stringify({ xp:current.xp, inventoryLogs:current.inventoryLogs,
-        bankLogs:current.bankLogs, afk:current.afk, characterX:current.characterX, characterY:current.characterY,
-        trees:current.trees, equipment:current.equipment, inventoryGear:current.inventoryGear, bankGear:current.bankGear, lastSeen:Date.now() }));
+      localStorage.setItem(SAVE_KEY, JSON.stringify({ xp:current.xp, inventoryItems:current.inventoryItems,bankItems:current.bankItems,
+        afk:current.afk, characterX:current.characterX, characterY:current.characterY,
+        trees:current.trees, equipment:current.equipment,lastSeen:Date.now() }));
     };
     const saveTimer = window.setInterval(save, 2500);
     window.addEventListener("beforeunload", save);
@@ -273,7 +310,7 @@ export default function Home() {
 
       if (state.action === "idle") {
         if (!state.afk || !hasWoodcuttingAxe(state)) return state;
-        if (inventorySlotsUsed(state) >= MAX_INVENTORY_SLOTS) return state.inventoryLogs > 0 ? moveToBank(state,now) : { ...state, afk:false };
+        if (inventorySlotsUsed(state) >= MAX_INVENTORY_SLOTS) return itemCount(state.inventoryItems,"logs") > 0 ? moveToBank(state,now) : { ...state, afk:false };
         return moveToNextTree(state,now);
       }
       if (state.action === "walking-point") return { ...state, action:"idle", nextActionAt:0 };
@@ -286,7 +323,7 @@ export default function Home() {
       }
       if (state.action === "chopping") {
         if (!hasWoodcuttingAxe(state)) return { ...state, action:"idle", afk:false, targetTreeId:null };
-        if (inventorySlotsUsed(state) >= MAX_INVENTORY_SLOTS) return state.afk && state.inventoryLogs > 0 ? moveToBank(state,now) : { ...state, action:"idle", targetTreeId:null };
+        if (inventorySlotsUsed(state) >= MAX_INVENTORY_SLOTS) return state.afk && itemCount(state.inventoryItems,"logs") > 0 ? moveToBank(state,now) : { ...state, action:"idle", targetTreeId:null };
         const index = state.trees.findIndex(item => item.id === state.targetTreeId);
         const tree = state.trees[index];
         if (!tree || tree.charges <= 0) return state.afk ? moveToNextTree(state,now) : { ...state, action:"idle", targetTreeId:null };
@@ -297,14 +334,15 @@ export default function Home() {
         const remaining = tree.charges - logsGained;
         const trees = state.trees.slice();
         trees[index] = { ...tree, charges:remaining, respawnAt:remaining === 0 ? now + RESPAWN_MS : 0 };
-        state = { ...state, trees, inventoryLogs:state.inventoryLogs + logsGained, xp:Math.min(MAX_XP,state.xp + LOG_XP * logsGained) };
+        state = { ...state, trees, inventoryItems:setItemCount(state.inventoryItems,"logs",itemCount(state.inventoryItems,"logs")+logsGained), xp:Math.min(MAX_XP,state.xp + LOG_XP * logsGained) };
         if (inventorySlotsUsed(state) >= MAX_INVENTORY_SLOTS) return state.afk ? moveToBank(state,now) : { ...state, action:"idle", targetTreeId:null };
         if (remaining === 0) return state.afk ? moveToNextTree(state,now) : { ...state, action:"idle", targetTreeId:null };
         return { ...state, nextActionAt:now + CHOP_MS };
       }
       if (state.action === "walking-bank") return { ...state, action:"banking", nextActionAt:now + 650 };
       if (state.action === "banking") {
-        state = { ...state, bankLogs:state.bankLogs + state.inventoryLogs, inventoryLogs:0 };
+        const logs = itemCount(state.inventoryItems,"logs");
+        state = { ...state, bankItems:setItemCount(state.bankItems,"logs",itemCount(state.bankItems,"logs")+logs), inventoryItems:setItemCount(state.inventoryItems,"logs",0) };
         return state.afk && hasWoodcuttingAxe(state) ? moveToNextTree(state,now) : { ...state, action:"idle", nextActionAt:0 };
       }
       return state;
@@ -318,13 +356,16 @@ export default function Home() {
   const xpProgress = level >= 99 ? 100 : Math.max(0,Math.min(100,((game.xp-levelStart)/(nextLevelXp-levelStart))*100));
   const actionProgress = game.action === "chopping" ? Math.max(4,Math.min(100,(1-(game.nextActionAt-game.now)/CHOP_MS)*100)) : xpProgress;
   const inventoryUsed = inventorySlotsUsed(game);
+  const inventoryLogs = itemCount(game.inventoryItems,"logs");
+  const bankLogs = itemCount(game.bankItems,"logs");
+  const firstInventoryItem = (Object.keys(ITEMS) as ItemId[]).find(id => itemCount(game.inventoryItems,id)>0) ?? null;
   const equippedCount = Object.values(game.equipment).filter(Boolean).length;
   const currentAxe = equippedAxe(game);
-  const selectedAxe = AXE_BY_ID[selectedBankAxe];
-  const selectedAxeEquipped = game.equipment.weapon === selectedBankAxe;
-  const selectedAxeInPack = game.inventoryGear.includes(selectedBankAxe);
-  const selectedAxeInBank = game.bankGear.includes(selectedBankAxe);
-  const selectedAxeLocked = level < selectedAxe.requiredLevel;
+  const selectedItem = ITEMS[selectedBankItem];
+  const selectedItemEquipped = selectedBankItem !== "logs" && Object.values(game.equipment).includes(selectedBankItem as GearId);
+  const selectedItemInPack = itemCount(game.inventoryItems,selectedBankItem)>0;
+  const selectedItemInBank = itemCount(game.bankItems,selectedBankItem)>0;
+  const bankCatalog = (Object.keys(ITEMS) as ItemId[]).filter(id => itemCount(game.bankItems,id)>0);
   const actionText = useMemo(() => {
     if (game.action === "walking-point") return "Walking across the wood";
     if (game.action === "walking-tree") return "Walking to a tree";
@@ -356,8 +397,25 @@ export default function Home() {
 
   const visitBank = () => {
     setWelcome(false); setBankOpen(true);
-    if (game.inventoryLogs > 0) setGame(previous => moveToBank(previous,Date.now()));
+    const now = Date.now();
+    setGame(previous => ({...previous,afk:false,action:"walking-point",targetTreeId:null,characterX:BANK_POSITION.x,
+      characterY:BANK_POSITION.y,nextActionAt:now+walkTime(previous.characterX,previous.characterY,BANK_POSITION.x,BANK_POSITION.y),now}));
   };
+
+  const depositInventoryItem = (item:ItemId,requested:number) => {
+    const available = itemCount(game.inventoryItems,item);
+    const amount = Math.min(Math.max(0,Math.floor(requested)),available);
+    if (amount <= 0) { setGearNotice(`No ${ITEMS[item].name.toLowerCase()} to deposit.`); return; }
+    setGame(previous => {
+      const safeAmount = Math.min(amount,itemCount(previous.inventoryItems,item));
+      if (safeAmount <= 0) return previous;
+      return {...previous,bankItems:setItemCount(previous.bankItems,item,itemCount(previous.bankItems,item)+safeAmount),
+        inventoryItems:setItemCount(previous.inventoryItems,item,itemCount(previous.inventoryItems,item)-safeAmount),now:Date.now()};
+    });
+    setGearNotice(`${amount} ${amount===1 ? ITEMS[item].name : ITEMS[item].name.toLowerCase()} deposited.`);
+  };
+
+  const depositInventoryLogs = () => depositInventoryItem("logs",inventoryLogs);
 
   const begin = () => {
     setWelcome(false);
@@ -371,13 +429,11 @@ export default function Home() {
     const item = GEAR[id];
     if (item.requiredLevel > level) { setGearNotice(`${item.name} requires Woodcutting level ${item.requiredLevel}.`); setPanel("equipment"); return; }
     setGame(previous => {
-      const inventoryIndex = previous.inventoryGear.indexOf(id);
-      if (inventoryIndex < 0) return previous;
-      const inventoryGear = previous.inventoryGear.slice();
-      inventoryGear.splice(inventoryIndex,1);
+      if (itemCount(previous.inventoryItems,id) < 1) return previous;
+      let inventoryItems = setItemCount(previous.inventoryItems,id,itemCount(previous.inventoryItems,id)-1);
       const replaced = previous.equipment[item.slot];
-      if (replaced) inventoryGear.push(replaced);
-      return { ...previous, equipment:{...previous.equipment,[item.slot]:id}, inventoryGear, now:Date.now() };
+      if (replaced) inventoryItems=setItemCount(inventoryItems,replaced,itemCount(inventoryItems,replaced)+1);
+      return { ...previous, equipment:{...previous.equipment,[item.slot]:id}, inventoryItems, now:Date.now() };
     });
     setGearNotice(`${item.name} equipped.`);
     setPanel("equipment");
@@ -390,35 +446,38 @@ export default function Home() {
       const id = previous.equipment[slot];
       if (!id || inventorySlotsUsed(previous) >= MAX_INVENTORY_SLOTS) return previous;
       const removingAxe = slot === "weapon";
-      return { ...previous, equipment:{...previous.equipment,[slot]:null}, inventoryGear:[...previous.inventoryGear,id],
+      return { ...previous, equipment:{...previous.equipment,[slot]:null}, inventoryItems:setItemCount(previous.inventoryItems,id,itemCount(previous.inventoryItems,id)+1),
         afk:removingAxe ? false : previous.afk, action:removingAxe ? "idle" : previous.action,
         targetTreeId:removingAxe ? null : previous.targetTreeId, nextActionAt:removingAxe ? 0 : previous.nextActionAt, now:Date.now() };
     });
     if (item) setGearNotice(`${item.name} moved to your inventory.`);
   };
 
-  const equipAxeFromBank = (id:AxeId) => {
-    const axe = AXE_BY_ID[id];
-    if (axe.requiredLevel > level) { setGearNotice(`${axe.name} requires Woodcutting level ${axe.requiredLevel}.`); return; }
+  const withdrawBankItem = (item:BankItemId,requested:number) => {
+    const freeSlots = MAX_INVENTORY_SLOTS-inventoryUsed;
+    const available = itemCount(game.bankItems,item);
+    const amount = Math.min(Math.max(0,Math.floor(requested)),freeSlots,available);
+    if (amount <= 0) {
+      setGearNotice(freeSlots <= 0 ? "Your inventory is full." : "That item is not currently in the bank.");
+      setBankMenu(null); return;
+    }
     setGame(previous => {
-      if (!previous.bankGear.includes(id)) return previous;
-      const bankGear = previous.bankGear.filter(item => item !== id);
-      const oldWeapon = previous.equipment.weapon;
-      if (oldWeapon && GEAR[oldWeapon].kind === "axe") bankGear.push(oldWeapon as AxeId);
-      return { ...previous, bankGear, equipment:{...previous.equipment,weapon:id}, now:Date.now() };
+      const safeAmount = Math.min(amount,MAX_INVENTORY_SLOTS-inventorySlotsUsed(previous),itemCount(previous.bankItems,item));
+      if (safeAmount <= 0) return previous;
+      return {...previous,bankItems:setItemCount(previous.bankItems,item,itemCount(previous.bankItems,item)-safeAmount),
+        inventoryItems:setItemCount(previous.inventoryItems,item,itemCount(previous.inventoryItems,item)+safeAmount),now:Date.now()};
     });
-    setGearNotice(`${axe.name} equipped from the bank.`);
+    setGearNotice(`${amount} ${amount===1 ? ITEMS[item].name : ITEMS[item].name.toLowerCase()} withdrawn.`);
+    setBankMenu(null);
   };
 
-  const storeAxeInBank = (id:AxeId) => {
-    setGame(previous => {
-      const inventoryIndex = previous.inventoryGear.indexOf(id);
-      if (inventoryIndex < 0) return previous;
-      const inventoryGear = previous.inventoryGear.slice();
-      inventoryGear.splice(inventoryIndex,1);
-      return { ...previous, inventoryGear, bankGear:previous.bankGear.includes(id) ? previous.bankGear : [...previous.bankGear,id], now:Date.now() };
-    });
-    setGearNotice(`${AXE_BY_ID[id].name} stored in the bank.`);
+  const openBankMenu = (event:ReactMouseEvent<HTMLElement>,item:BankItemId) => {
+    event.preventDefault(); event.stopPropagation();
+    const panelBounds = event.currentTarget.closest(".bank-panel")?.getBoundingClientRect();
+    if (!panelBounds) return;
+    setCustomWithdrawAmount("1");
+    setBankMenu({item,x:Math.max(6,Math.min(panelBounds.width-174,event.clientX-panelBounds.left)),
+      y:Math.max(36,Math.min(panelBounds.height-222,event.clientY-panelBounds.top)),custom:false});
   };
 
   const walkToPoint = (event:ReactMouseEvent<HTMLDivElement>) => {
@@ -443,7 +502,7 @@ export default function Home() {
       <div className="brand-lockup"><span className="brand-mark" aria-hidden="true"><i/><b/></span><div><h1>Tallowmere</h1><p>The old woods remember</p></div></div>
       <div className="player-stats" aria-label="Player stats">
         <div className="stat-pill"><span className="stat-icon stat-icon--star">✦</span><div><small>Woodcutting</small><strong>Level {level}</strong></div></div>
-        <div className="stat-pill"><span className="stat-icon stat-icon--log"/><div><small>Banked logs</small><strong>{formatNumber(game.bankLogs)}</strong></div></div>
+        <div className="stat-pill"><span className="stat-icon stat-icon--log"/><div><small>Banked logs</small><strong>{formatNumber(bankLogs)}</strong></div></div>
         <div className="world-size"><span/>100 × 100 TILES</div>
       </div>
     </header>
@@ -488,24 +547,37 @@ export default function Home() {
         </aside>}
 
         {bankOpen && <aside className="bank-panel bank-panel--vault" aria-label="Tallowmere bank interior">
-          <div className="bank-classic-title"><span>{formatNumber(game.bankLogs)}</span><strong>The Bank of Tallowmere</strong><button type="button" onClick={() => setBankOpen(false)} aria-label="Close bank">×</button></div>
-          <div className="bank-classic-grid" role="list" aria-label="Stored items">
-            <div className="bank-item bank-item--logs" role="listitem" title={`${formatNumber(game.bankLogs)} banked logs`}><LogIcon/><span>{formatNumber(game.bankLogs)}</span><small>Logs</small></div>
-            {AXES.map(axe => {
-              const isEquipped = game.equipment.weapon === axe.id;
-              const inPack = game.inventoryGear.includes(axe.id);
-              const inBank = game.bankGear.includes(axe.id);
-              const locked = level < axe.requiredLevel;
-              return <button className={`bank-item bank-item--axe ${locked ? "bank-item--locked" : ""} ${selectedBankAxe===axe.id ? "bank-item--selected" : ""}`} type="button" role="listitem" key={axe.id}
-                onClick={() => setSelectedBankAxe(axe.id)} title={`${axe.name} — level ${axe.requiredLevel}, ${Math.round(axe.bonusChance*100)}% extra-log chance`}>
-                <GearIcon id={axe.id}/><span>Lv {axe.requiredLevel}</span><small>{isEquipped ? "E" : inPack ? "P" : inBank ? "1" : "0"}</small>
+          <div className="bank-classic-title"><span>{formatNumber(bankLogs)}</span><strong>The Bank of Tallowmere</strong><button type="button" onClick={() => {setBankOpen(false);setBankMenu(null);}} aria-label="Close bank">×</button></div>
+          <div className="bank-classic-grid" aria-label="Stored items">
+            {bankCatalog.map(id => {
+              const item = ITEMS[id];
+              const inBank = itemCount(game.bankItems,id);
+              const locked = level < item.requiredLevel;
+              return <button className={`bank-item ${id==="logs" ? "bank-item--logs" : "bank-item--item"} ${locked ? "bank-item--locked" : ""} ${selectedBankItem===id ? "bank-item--selected" : ""}`} type="button" key={id}
+                onClick={() => {setSelectedBankItem(id);withdrawBankItem(id,1);}} onContextMenu={event => {setSelectedBankItem(id);openBankMenu(event,id);}}
+                title={`${item.name} — left-click withdraws 1, right-click for more options`}>
+                <ItemIcon id={id}/><span>{id==="logs" ? formatNumber(inBank) : `Lv ${item.requiredLevel}`}</span><small>{formatNumber(inBank)}</small>
               </button>;
             })}
           </div>
-          <div className="bank-selected-item"><GearIcon id={selectedAxe.id}/><div><small>SELECTED ITEM</small><strong>{selectedAxe.name}</strong><span>Woodcutting {selectedAxe.requiredLevel} · {Math.round(selectedAxe.bonusChance*100)}% extra-log chance</span></div>
-            {selectedAxeEquipped ? <button type="button" disabled>Equipped</button> : selectedAxeInPack ? <button type="button" onClick={() => storeAxeInBank(selectedAxe.id)}>Store</button> : selectedAxeInBank ? <button type="button" disabled={selectedAxeLocked} onClick={() => equipAxeFromBank(selectedAxe.id)}>{selectedAxeLocked ? `Level ${selectedAxe.requiredLevel}` : "Wield"}</button> : <button type="button" disabled>Unavailable</button>}
+          <div className="bank-selected-item"><ItemIcon id={selectedItem.id}/><div><small>SELECTED ITEM</small><strong>{selectedItem.name}</strong><span>{selectedItem.kind==="axe" ? `Woodcutting ${selectedItem.requiredLevel} · ${Math.round(AXE_BY_ID[selectedItem.id as AxeId].bonusChance*100)}% extra-log chance` : selectedItem.description}</span></div>
+            {selectedItemEquipped ? <button type="button" disabled>Equipped</button> : selectedItemInBank ? <button type="button" onClick={() => withdrawBankItem(selectedBankItem,1)}>Withdraw 1</button> : selectedItemInPack ? <button type="button" onClick={() => depositInventoryItem(selectedBankItem,1)}>Store 1</button> : <button type="button" disabled>Unavailable</button>}
           </div>
-          <div className="bank-classic-controls"><button type="button" className="bank-deposit" disabled={game.inventoryLogs===0} onClick={visitBank}>{game.inventoryLogs>0 ? `Deposit ${game.inventoryLogs} logs` : "No logs to deposit"}</button><span>{gearNotice}</span><small>E = equipped · P = in pack</small></div>
+          <div className="bank-classic-controls"><button type="button" className="bank-deposit" disabled={inventoryLogs===0} onClick={depositInventoryLogs}>{inventoryLogs>0 ? `Deposit ${inventoryLogs} logs` : "No logs to deposit"}</button><span>{gearNotice}</span><small>Left: 1 · Right: options</small></div>
+          {bankMenu && <div className="bank-context-menu" style={{left:bankMenu.x,top:bankMenu.y}}>
+            <strong>{ITEMS[bankMenu.item].name}</strong>
+            {!bankMenu.custom ? <>
+              <button type="button" onClick={() => withdrawBankItem(bankMenu.item,1)}>Withdraw 1</button>
+              <button type="button" onClick={() => withdrawBankItem(bankMenu.item,5)}>Withdraw 5</button>
+              <button type="button" onClick={() => withdrawBankItem(bankMenu.item,10)}>Withdraw 10</button>
+              <button type="button" onClick={() => withdrawBankItem(bankMenu.item,itemCount(game.bankItems,bankMenu.item))}>Withdraw all</button>
+              <button type="button" onClick={() => setBankMenu({...bankMenu,custom:true})}>Custom amount…</button>
+              <button type="button" className="bank-menu-cancel" onClick={() => setBankMenu(null)}>Cancel</button>
+            </> : <form onSubmit={event => {event.preventDefault();withdrawBankItem(bankMenu.item,Number(customWithdrawAmount));}}>
+              <label htmlFor="custom-withdraw">Amount</label><input id="custom-withdraw" type="number" min="1" max={itemCount(game.bankItems,bankMenu.item)} value={customWithdrawAmount} onChange={event => setCustomWithdrawAmount(event.target.value)}/>
+              <div><button type="submit">Withdraw</button><button type="button" onClick={() => setBankMenu({...bankMenu,custom:false})}>Back</button></div>
+            </form>}
+          </div>}
         </aside>}
 
         <div className="status-dock" aria-live="polite">
@@ -524,8 +596,8 @@ export default function Home() {
           {!panelMinimized && <div className="inventory-panel">
             {panel === "inventory" ? <>
               <div className="panel-heading"><div><span>Inventory</span><small>{inventoryUsed} / 28 slots</small></div><b>{28-inventoryUsed}</b></div>
-              <InventoryGrid logs={game.inventoryLogs} gear={game.inventoryGear} level={level} onEquip={equipGear}/>
-              <div className="item-detail">{game.inventoryGear.length ? <><GearIcon id={game.inventoryGear[0]} small/><div><strong>Equipment in pack</strong><small>Click an item above to equip it</small></div></> : <><LogIcon small/><div><strong>Logs</strong><small>{game.inventoryLogs ? `${game.inventoryLogs} ready to bank` : "Your pack is ready"}</small></div></>}</div>
+              <InventoryGrid items={game.inventoryItems} level={level} onEquip={equipGear}/>
+              <div className="item-detail">{firstInventoryItem ? <><ItemIcon id={firstInventoryItem} small/><div><strong>{ITEMS[firstInventoryItem].name}</strong><small>{firstInventoryItem === "logs" ? `${inventoryLogs} ready to bank` : ITEMS[firstInventoryItem].description}</small></div></> : <><LogIcon small/><div><strong>Empty pack</strong><small>Your pack is ready</small></div></>}</div>
             </> : panel === "skills" ? <div className="skill-panel">
               <div className="panel-heading"><div><span>Skills</span><small>1 skill available</small></div><b>1</b></div>
               <div className="skill-card"><span className="skill-card__icon"><span className="tab-axe"><i/><b/></span></span><div className="skill-card__copy"><small>WOODCUTTING</small><strong>Level {level}</strong><span>{formatNumber(game.xp)} XP</span></div></div>

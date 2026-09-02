@@ -21,6 +21,8 @@
 - Woodcutting requires an equipped axe, and gear choices persist with the local save.
 - The axe progression now contains 20 distinct axes from level 1 to 99. Higher tiers have increasing chances to harvest one extra log per chop.
 - The clickable bank includes a compact classic-RPG item grid, all 20 axe tiers, level locks, selected-item details, and wield/store controls.
+- Bank contents and inventory contents now use one shared item-count system. Every registered item automatically supports left-click withdrawal of 1 and a right-click menu for 1, 5, 10, all, or a custom amount, subject to the 28-slot inventory limit.
+- Bank slots represent only items actually stored in the bank. When the last copy is withdrawn or equipped, that slot disappears until a copy is deposited again.
 - The skills, equipment, and inventory panel can be minimized to its tab strip and reopened from any tab.
 
 ## Visual direction
