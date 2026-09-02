@@ -31,6 +31,12 @@
 - Game code is now separated into focused components, world data, shared gameplay rules, inventory rules, shared types, and a categorized item catalog instead of living in one oversized route file.
 - Item definitions now include a gold `value`, category, skill, requirements, and appearance data. Normal logs have their own woodcutting resource file, armor is grouped by equipment slot, and axes are grouped under weapons so individual balancing changes stay isolated.
 - Skills now have their own top-level game section. Woodcutting owns its definition, XP curve, XP reward, level cap, and axe-use rules under `game/skills/woodcutting`, while axes remain categorized separately under `game/items/weapons/axes`.
+- Tallowmere City is now the playable world map, built around a central fountain with a clickable bank, general store, weapon smith, armor outfitter, and skills guild.
+- The General Store purchases every current and future registered inventory item at the gold `value` defined in that item file. Players can sell 1, 5, 10, or all matching items.
+- Gold is part of the saved game state, appears in the top bar and merchant windows, and persists between visits.
+- The weapon and armor stores sell their respective catalog items into the next available inventory slot; the skills guild presents the active Woodcutting discipline and is ready for future skills.
+- Merchant interfaces share one reusable store panel, while building locations and stock remain organized in `game/shops/`.
+- The original Tallowmere City artwork is stored at `public/tallowmere-city.png` and doubles as the social preview image.
 
 ## Visual direction
 
@@ -52,8 +58,8 @@ Do not copy Well of Souls artwork, maps, characters, logos, or interface assets 
 3. Make the GitHub repository public if using free GitHub Pages, then enable GitHub Actions as the Pages source.
 4. Test the published game URL and confirm saved progress, AFK mode, bank access, tabs, and camera movement.
 5. Test click-to-move, panel minimizing, equipping and removing gear, and several bank axe tiers.
-6. For the next art pass, add directional player poses, more building details, and another distinct woodland landmark.
-7. For the next gameplay pass, choose whether to add axe acquisition costs or begin the second skill.
+6. Test selling logs, buying an affordable item, and confirming gold and inventory persist after a refresh.
+7. For the next gameplay pass, decide which products belong in the General and Skills stores or begin the second skill.
 
 ## Repository
 

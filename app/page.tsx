@@ -1,16 +1,19 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from "react";
 import { GearSlot } from "./game/components/GearSlot";
 import { InventoryGrid } from "./game/components/InventoryGrid";
-import { AxeIcon, GearIcon, ItemIcon, LogIcon } from "./game/components/ItemIcons";
+import { GearIcon, ItemIcon, LogIcon } from "./game/components/ItemIcons";
 import { PixelTree } from "./game/components/PixelTree";
+import { CityBuilding } from "./game/components/CityBuilding";
+import { StorePanel } from "./game/components/StorePanel";
 import { BANK_POSITION, CHOP_MS, MAX_INVENTORY_SLOTS, MAX_OFFLINE_MS, RESPAWN_MS, SAVE_KEY, TREE_LAYOUT } from "./game/data/world";
-import { availableTree, formatDuration, formatNumber, initialGame, moveToBank, moveToNextTree, moveToTree, walkTime } from "./game/lib/game-state";
+import { formatDuration, formatNumber, initialGame, moveToBank, moveToNextTree, moveToTree, walkTime } from "./game/lib/game-state";
 import { addInventoryItems, inventoryItemCount, inventorySlotsUsed, itemCount, normalizeInventorySlots, normalizeItemCounts, removeInventoryItems, setItemCount } from "./game/lib/inventory";
 import { AXES, AXE_BY_ID, GEAR, ITEMS } from "./game/items";
+import { CITY_BANK, STORE_ORDER, STORES } from "./game/shops";
 import { equippedWoodcuttingAxe, hasWoodcuttingAxe, MAX_WOODCUTTING_XP, WOODCUTTING, WOODCUTTING_XP_PER_LOG, woodcuttingLevelFromXp, xpForWoodcuttingLevel } from "./game/skills";
-import type { AxeId, BankItemId, BankMenuMode, EquipmentSlot, EquipmentState, GameState, GearId, ItemCounts, ItemId, OfflineSummary, Panel, TreeState } from "./game/types";
+import type { AxeId, BankItemId, BankMenuMode, EquipmentSlot, EquipmentState, GameState, GearId, ItemCounts, ItemId, OfflineSummary, Panel, StoreId, TreeState } from "./game/types";
 
 export default function Home() {
   const [game, setGame] = useState<GameState>(initialGame);
@@ -19,6 +22,9 @@ export default function Home() {
   const [panelMinimized, setPanelMinimized] = useState(false);
   const [welcome, setWelcome] = useState(true);
   const [bankOpen, setBankOpen] = useState(false);
+  const [activeStore, setActiveStore] = useState<StoreId|null>(null);
+  const [selectedStoreItem, setSelectedStoreItem] = useState<ItemId|null>(null);
+  const [storeNotice, setStoreNotice] = useState("Select an item to begin trading.");
   const [offline, setOffline] = useState<OfflineSummary | null>(null);
   const [moveMarker, setMoveMarker] = useState<{x:number;y:number} | null>(null);
   const [gearNotice, setGearNotice] = useState("Click a filled slot to unequip it.");
@@ -31,10 +37,15 @@ export default function Home() {
   useEffect(() => { latestGame.current = game; }, [game]);
 
   useEffect(() => {
+    let cancelled = false;
     const now = Date.now();
+    let restoredGame:GameState|null = null;
+    let restoredOffline:OfflineSummary|null = null;
+    let hasSave = false;
     try {
       const raw = localStorage.getItem(SAVE_KEY);
       if (raw) {
+        hasSave = true;
         const saved = JSON.parse(raw) as Partial<GameState> & { lastSeen?:number;inventoryItems?:ItemCounts;inventoryLogs?:number;bankLogs?:number;inventoryGear?:GearId[];bankGear?:AxeId[] };
         const base = initialGame();
         const savedTrees = Array.isArray(saved.trees) && saved.trees.length === TREE_LAYOUT.length ? saved.trees : base.trees;
@@ -57,21 +68,27 @@ export default function Home() {
         const offlineLogs = offlineAxe ? Math.floor(offlineActions * (1 + offlineAxe.bonusChance)) : 0;
         const offlineXp = offlineLogs * WOODCUTTING_XP_PER_LOG;
         bankItems=setItemCount(bankItems,"logs",itemCount(bankItems,"logs")+offlineLogs);
-        setGame({ ...base, xp:Math.min(MAX_WOODCUTTING_XP,(saved.xp ?? 0) + offlineXp),inventorySlots,bankItems,equipment,afk:saved.afk ?? true,
+        restoredGame = { ...base, xp:Math.min(MAX_WOODCUTTING_XP,(saved.xp ?? 0) + offlineXp),gold:Math.max(0,Math.floor(saved.gold ?? 0)),inventorySlots,bankItems,equipment,afk:saved.afk ?? true,
           characterX:saved.characterX ?? base.characterX, characterY:saved.characterY ?? base.characterY,
-          trees:savedTrees.map((tree,index) => tree.respawnAt && tree.respawnAt <= now ? { ...tree, charges:tree.maxCharges || base.trees[index].maxCharges, respawnAt:0 } : tree), now });
-        if (offlineLogs > 0) setOffline({ elapsed, logs:offlineLogs, xp:offlineXp });
-        setWelcome(false);
+          trees:savedTrees.map((tree,index) => tree.respawnAt && tree.respawnAt <= now ? { ...tree, charges:tree.maxCharges || base.trees[index].maxCharges, respawnAt:0 } : tree), now };
+        if (offlineLogs > 0) restoredOffline = { elapsed, logs:offlineLogs, xp:offlineXp };
       }
-    } catch { localStorage.removeItem(SAVE_KEY); }
-    setHydrated(true);
+    } catch { hasSave = false; localStorage.removeItem(SAVE_KEY); }
+    queueMicrotask(() => {
+      if (cancelled) return;
+      if (restoredGame) setGame(restoredGame);
+      if (restoredOffline) setOffline(restoredOffline);
+      if (hasSave) setWelcome(false);
+      setHydrated(true);
+    });
+    return () => { cancelled = true; };
   }, []);
 
   useEffect(() => {
     if (!hydrated) return;
     const save = () => {
       const current = latestGame.current;
-      localStorage.setItem(SAVE_KEY, JSON.stringify({ xp:current.xp, inventorySlots:current.inventorySlots,bankItems:current.bankItems,
+      localStorage.setItem(SAVE_KEY, JSON.stringify({ xp:current.xp, gold:current.gold, inventorySlots:current.inventorySlots,bankItems:current.bankItems,
         afk:current.afk, characterX:current.characterX, characterY:current.characterY,
         trees:current.trees, equipment:current.equipment,lastSeen:Date.now() }));
     };
@@ -148,7 +165,7 @@ export default function Home() {
   const selectedItemInBank = itemCount(game.bankItems,selectedBankItem)>0;
   const bankCatalog = (Object.keys(ITEMS) as ItemId[]).filter(id => itemCount(game.bankItems,id)>0);
   const actionText = useMemo(() => {
-    if (game.action === "walking-point") return "Walking across the wood";
+    if (game.action === "walking-point") return "Walking across the city";
     if (game.action === "walking-tree") return "Walking to a tree";
     if (game.action === "chopping") return "Chopping logs";
     if (game.action === "walking-bank") return "Walking to the bank";
@@ -162,7 +179,7 @@ export default function Home() {
   const chooseTree = (tree:TreeState) => {
     if (!hasWoodcuttingAxe(game)) { setPanel("equipment"); return; }
     if (tree.charges <= 0 || inventoryUsed >= MAX_INVENTORY_SLOTS) return;
-    setWelcome(false); setBankOpen(false);
+    setWelcome(false); setBankOpen(false); setActiveStore(null);
     setGame(previous => moveToTree({ ...previous, now:Date.now() }, tree, Date.now()));
   };
 
@@ -177,10 +194,46 @@ export default function Home() {
   };
 
   const visitBank = () => {
-    setWelcome(false); setBankOpen(true);
+    setWelcome(false); setActiveStore(null); setBankOpen(true);
     const now = Date.now();
     setGame(previous => ({...previous,afk:false,action:"walking-point",targetTreeId:null,characterX:BANK_POSITION.x,
       characterY:BANK_POSITION.y,nextActionAt:now+walkTime(previous.characterX,previous.characterY,BANK_POSITION.x,BANK_POSITION.y),now}));
+  };
+
+  const visitStore = (storeId:StoreId) => {
+    const store = STORES[storeId];
+    const firstItem = game.inventorySlots.find((item):item is ItemId => Boolean(item)) ?? null;
+    setWelcome(false); setBankOpen(false); setBankMenu(null); setActiveStore(storeId); setSelectedStoreItem(firstItem);
+    setStoreNotice(storeId==="general" ? "Select an item and choose how many to sell." : `Welcome to ${store.name}.`);
+    const now = game.now;
+    setGame(previous => ({...previous,afk:false,action:"walking-point",targetTreeId:null,characterX:store.doorX,
+      characterY:store.doorY,nextActionAt:now+walkTime(previous.characterX,previous.characterY,store.doorX,store.doorY),now}));
+  };
+
+  const sellStoreItem = (item:ItemId,requested:number) => {
+    const available = inventoryItemCount(game.inventorySlots,item);
+    const amount = Math.min(Math.max(0,Math.floor(requested)),available);
+    if (amount<=0) {setStoreNotice(`You have no ${ITEMS[item].name.toLowerCase()} to sell.`);return;}
+    const earned = ITEMS[item].value*amount;
+    setGame(previous => {
+      const safeAmount = Math.min(amount,inventoryItemCount(previous.inventorySlots,item));
+      if (safeAmount<=0) return previous;
+      return {...previous,gold:previous.gold+ITEMS[item].value*safeAmount,
+        inventorySlots:removeInventoryItems(previous.inventorySlots,item,safeAmount),now:Date.now()};
+    });
+    setStoreNotice(`Sold ${amount} ${amount===1 ? ITEMS[item].name : ITEMS[item].name.toLowerCase()} for ${formatNumber(earned)} gold.`);
+    if (amount>=available) setSelectedStoreItem(null);
+  };
+
+  const buyStoreItem = (item:ItemId) => {
+    const price = ITEMS[item].value;
+    if (inventoryUsed>=MAX_INVENTORY_SLOTS) {setStoreNotice("Your inventory is full.");return;}
+    if (game.gold<price) {setStoreNotice(`You need ${formatNumber(price-game.gold)} more gold.`);return;}
+    setGame(previous => {
+      if (inventorySlotsUsed(previous)>=MAX_INVENTORY_SLOTS || previous.gold<price) return previous;
+      return {...previous,gold:previous.gold-price,inventorySlots:addInventoryItems(previous.inventorySlots,item,1),now:Date.now()};
+    });
+    setStoreNotice(`${ITEMS[item].name} purchased for ${formatNumber(price)} gold.`);
   };
 
   const depositInventoryItem = (item:ItemId,requested:number,preferredSlot?:number) => {
@@ -207,14 +260,6 @@ export default function Home() {
     });
     setGearNotice(`${inventoryUsed} inventory ${inventoryUsed===1 ? "item" : "items"} deposited.`);
     setBankMenu(null);
-  };
-
-  const begin = () => {
-    setWelcome(false);
-    setGame(previous => {
-      if (!hasWoodcuttingAxe(previous)) return { ...previous, afk:false };
-      const tree = availableTree(previous); return tree ? moveToTree(previous,tree,Date.now()) : previous;
-    });
   };
 
   const equipGear = (id:GearId) => {
@@ -293,7 +338,20 @@ export default function Home() {
     const x = Math.max(2,Math.min(98,((event.clientX-bounds.left)/bounds.width)*100));
     const y = Math.max(2,Math.min(98,((event.clientY-bounds.top)/bounds.height)*100));
     const now = Date.now();
-    setWelcome(false); setBankOpen(false); setMoveMarker({x,y});
+    setWelcome(false); setBankOpen(false); setActiveStore(null); setMoveMarker({x,y});
+    setGame(previous => ({ ...previous, afk:false, action:"walking-point", targetTreeId:null,
+      characterX:x, characterY:y, nextActionAt:now + walkTime(previous.characterX,previous.characterY,x,y), now }));
+  };
+
+  const walkWithKeyboard = (event:ReactKeyboardEvent<HTMLDivElement>) => {
+    const directions:Record<string,[number,number]> = {ArrowLeft:[-4,0],ArrowRight:[4,0],ArrowUp:[0,-4],ArrowDown:[0,4]};
+    const direction = directions[event.key];
+    if (!direction) return;
+    event.preventDefault();
+    const x = Math.max(2,Math.min(98,game.characterX+direction[0]));
+    const y = Math.max(2,Math.min(98,game.characterY+direction[1]));
+    const now = game.now;
+    setWelcome(false); setBankOpen(false); setActiveStore(null); setMoveMarker({x,y});
     setGame(previous => ({ ...previous, afk:false, action:"walking-point", targetTreeId:null,
       characterX:x, characterY:y, nextActionAt:now + walkTime(previous.characterX,previous.characterY,x,y), now }));
   };
@@ -306,35 +364,23 @@ export default function Home() {
 
   return <main className="game-shell">
     <header className="topbar">
-      <div className="brand-lockup"><span className="brand-mark" aria-hidden="true"><i/><b/></span><div><h1>Tallowmere</h1><p>The old woods remember</p></div></div>
+      <div className="brand-lockup"><span className="brand-mark" aria-hidden="true"><i/><b/></span><div><h1>Tallowmere</h1><p>City of trades and old roads</p></div></div>
       <div className="player-stats" aria-label="Player stats">
         <div className="stat-pill"><span className="stat-icon stat-icon--star">✦</span><div><small>{WOODCUTTING.name}</small><strong>Level {level}</strong></div></div>
         <div className="stat-pill"><span className="stat-icon stat-icon--log"/><div><small>Banked logs</small><strong>{formatNumber(bankLogs)}</strong></div></div>
+        <div className="stat-pill stat-pill--gold"><span className="stat-icon stat-icon--gold">●</span><div><small>Gold</small><strong>{formatNumber(game.gold)}</strong></div></div>
         <div className="world-size"><span/>100 × 100 TILES</div>
       </div>
     </header>
 
-    <section className="world-card" aria-label="Tallowmere forest game world">
+    <section className="world-card" aria-label="Tallowmere City game world">
       <div className="world-map">
-        <div className="world-layer" style={{ transform:`translate(${cameraX}%, ${cameraY}%)` }} onClick={walkToPoint} aria-label="Tallowmere Wood. Click the ground to walk.">
-          <div className="world-edge world-edge--top"/><div className="world-edge world-edge--left"/>
-          <div className="dirt-path dirt-path--vertical"/><div className="dirt-path dirt-path--branch"/>
-          <div className="pond"><span className="pond-ripple pond-ripple--one"/><span className="pond-ripple pond-ripple--two"/></div>
-          <div className="world-fog world-fog--one"/><div className="world-fog world-fog--two"/>
-          <div className="ruin-stones ruin-stones--one"><i/><b/><em/></div>
-          <div className="ruin-stones ruin-stones--two"><i/><b/><em/></div>
-          <div className="dead-brush dead-brush--one"><i/><b/><em/></div>
-          <div className="dead-brush dead-brush--two"><i/><b/><em/></div>
-          <div className="mushroom-patch mushroom-patch--one"><i/><b/><em/></div>
-          <div className="mushroom-patch mushroom-patch--two"><i/><b/><em/></div>
-          <div className="road-sign"><i/><b/><span>Bank</span></div>
-          <div className="flowers flowers--one">· ✦ ·</div><div className="flowers flowers--two">✦ ·</div>
+        <div className="world-layer world-layer--city" style={{ transform:`translate(${cameraX}%, ${cameraY}%)` }} onClick={walkToPoint} onKeyDown={walkWithKeyboard} role="button" tabIndex={0} aria-label="Tallowmere City. Click the ground or use arrow keys to walk.">
+          {/* eslint-disable-next-line @next/next/no-img-element -- this public image is also used by the GitHub Pages build */}
+          <img className="city-map-art" src="tallowmere-city.png" alt="" aria-hidden="true" draggable="false"/>
           {game.trees.map(tree => <PixelTree key={tree.id} tree={tree} selected={game.targetTreeId===tree.id} chopping={game.action==="chopping" && game.targetTreeId===tree.id} now={game.now} onChoose={() => chooseTree(tree)}/>)}
-
-          <button className="bank-building" type="button" aria-label="Enter Tallowmere bank" onClick={event => { event.stopPropagation(); visitBank(); }}>
-            <span className="bank-shadow"/><span className="bank-roof"><i/><b/></span><span className="bank-wall"/>
-            <span className="bank-door"/><span className="bank-window bank-window--left"/><span className="bank-window bank-window--right"/><strong>BANK</strong>
-          </button>
+          <CityBuilding building={CITY_BANK} onVisit={visitBank}/>
+          {STORE_ORDER.map(storeId => <CityBuilding key={storeId} building={STORES[storeId]} onVisit={() => visitStore(storeId)}/>)}
 
           <div className={`player-character player-character--${game.action} ${game.equipment.head ? "player-character--head-equipped" : "player-character--bare-head"} ${game.equipment.body ? "player-character--body-equipped" : "player-character--no-body"} ${game.equipment.shield ? "player-character--shield-equipped" : ""} ${game.equipment.legs ? "player-character--legs-equipped" : "player-character--no-legs"}`} style={{left:`${game.characterX}%`,top:`${game.characterY}%`,"--axe-metal":currentAxe?.metal ?? "#a76b3f","--axe-edge":currentAxe?.edge ?? "#d19a62","--axe-handle":currentAxe?.handle ?? "#6e462a"} as CSSProperties} aria-label={`Your character is ${actionText.toLowerCase()}`}>
             <span className="character-shadow"/><span className="character-hair"/><span className="character-head"/><span className="character-body"/>
@@ -343,14 +389,14 @@ export default function Home() {
           {moveMarker && game.action === "walking-point" && <span className="movement-marker" style={{left:`${moveMarker.x}%`,top:`${moveMarker.y}%`}} aria-hidden="true"><i/></span>}
         </div>
 
-        <div className="region-plaque" aria-hidden="true"><small>WESTERN MARCH</small><strong>Tallowmere Wood</strong></div>
+        <div className="region-plaque" aria-hidden="true"><small>TALLOWMERE PROVINCE</small><strong>Tallowmere City</strong></div>
         <div className="movement-hint" aria-hidden="true"><span>✥</span> Click the ground to move</div>
 
         {welcome && <aside className="welcome-card">
           <button className="welcome-close" type="button" aria-label="Close welcome card" onClick={() => setWelcome(false)}>×</button>
-          <span className="eyebrow">THE OLD ROAD AWAITS</span><h2>Enter Tallowmere Wood</h2>
-          <p>Choose a tree and put your bronze axe to work. AFK mode will roam the wood, bank your logs, and keep watch while you are away.</p>
-          <button className="welcome-action" type="button" onClick={begin}>Enter the wood <span>›</span></button>
+          <span className="eyebrow">THE CITY GATES ARE OPEN</span><h2>Welcome to Tallowmere City</h2>
+          <p>Visit the bank, sell gathered logs at the General Store, and explore the city&apos;s weapon, armor, and skills merchants.</p>
+          <button className="welcome-action" type="button" onClick={() => setWelcome(false)}>Enter the city <span>›</span></button>
         </aside>}
 
         {bankOpen && <aside className="bank-panel bank-panel--vault" aria-label="Tallowmere bank interior">
@@ -416,13 +462,17 @@ export default function Home() {
           </div>}
         </aside>}
 
+        {activeStore && <StorePanel store={STORES[activeStore]} inventorySlots={game.inventorySlots} gold={game.gold} level={level}
+          selectedItem={selectedStoreItem} notice={storeNotice} onSelect={item => {setSelectedStoreItem(item);setStoreNotice(`${ITEMS[item].name} is worth ${formatNumber(ITEMS[item].value)} gold each.`);}}
+          onSell={sellStoreItem} onBuy={buyStoreItem} onMove={moveInventorySlot} onClose={() => setActiveStore(null)}/>}
+
         <div className="status-dock" aria-live="polite">
           <span className="status-avatar"><i/></span><div className="status-copy"><small>Current action</small><strong>{actionText}</strong></div>
           <div className="status-divider"/><div className="xp-summary"><small>{WOODCUTTING.name} XP</small><strong>{formatNumber(game.xp)} <span>/ {level>=WOODCUTTING.maxLevel ? "MAX" : formatNumber(nextLevelXp)} XP</span></strong></div>
           <div className="xp-bar" title={game.action==="chopping" ? "Chop progress" : "Level progress"}><span style={{width:`${actionProgress}%`}}/></div>
         </div>
 
-        <aside className={`side-panel ${panelMinimized ? "side-panel--minimized" : ""} ${bankOpen ? "side-panel--bank-open" : ""}`}>
+        <aside className={`side-panel ${panelMinimized ? "side-panel--minimized" : ""} ${bankOpen || activeStore ? "side-panel--bank-open" : ""}`}>
           <div className="panel-tabs" aria-label="Game panels">
             <button className="panel-minimize" type="button" aria-label={panelMinimized ? "Open game panel" : "Minimize game panel"} aria-expanded={!panelMinimized} onClick={() => setPanelMinimized(value => !value)}>{panelMinimized ? "▴" : "—"}</button>
             <button className={`panel-tab ${panel==="skills" ? "panel-tab--active" : ""}`} type="button" aria-label={`${WOODCUTTING.name} skill`} aria-pressed={panel==="skills"} onClick={() => {setPanel("skills");setPanelMinimized(false);}}><span className="tab-axe"><i/><b/></span></button>

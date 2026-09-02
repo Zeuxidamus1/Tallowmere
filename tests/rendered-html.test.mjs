@@ -20,16 +20,20 @@ test("server-renders the Tallowmere game",async () => {
   assert.match(response.headers.get("content-type") ?? "",/^text\/html\b/i);
 
   const html = await response.text();
-  assert.match(html,/<title>Tallowmere — The old woods remember<\/title>/i);
-  assert.match(html,/Tallowmere Wood/);
+  assert.match(html,/<title>Tallowmere — The city gates are open<\/title>/i);
+  assert.match(html,/Tallowmere City/);
   assert.match(html,/Woodcutting/);
   assert.match(html,/Inventory/);
-  assert.match(html,/Enter Tallowmere bank/);
+  assert.match(html,/Enter The Bank of Tallowmere/);
+  assert.match(html,/Enter Tallowmere General Store/);
+  assert.match(html,/Enter The Iron Lantern/);
+  assert.match(html,/Enter The Green Aegis/);
+  assert.match(html,/Enter Guild of Trades/);
   assert.doesNotMatch(html,/Your site is taking shape|Building your site/);
 });
 
-test("keeps item data and reusable game systems outside the route",async () => {
-  const [page,itemRegistry,normalLogs,axes,woodcutting,inventoryRules,inventoryGrid] = await Promise.all([
+test("keeps item, skill, shop, and reusable game systems outside the route",async () => {
+  const [page,itemRegistry,normalLogs,axes,woodcutting,inventoryRules,inventoryGrid,shops,storePanel] = await Promise.all([
     readFile(new URL("../app/page.tsx",import.meta.url),"utf8"),
     readFile(new URL("../app/game/items/index.ts",import.meta.url),"utf8"),
     readFile(new URL("../app/game/items/resources/logs/normal-logs.ts",import.meta.url),"utf8"),
@@ -37,6 +41,8 @@ test("keeps item data and reusable game systems outside the route",async () => {
     readFile(new URL("../app/game/skills/woodcutting/index.ts",import.meta.url),"utf8"),
     readFile(new URL("../app/game/lib/inventory.ts",import.meta.url),"utf8"),
     readFile(new URL("../app/game/components/InventoryGrid.tsx",import.meta.url),"utf8"),
+    readFile(new URL("../app/game/shops/index.ts",import.meta.url),"utf8"),
+    readFile(new URL("../app/game/components/StorePanel.tsx",import.meta.url),"utf8"),
   ]);
 
   assert.match(normalLogs,/category:"resources"/);
@@ -51,6 +57,14 @@ test("keeps item data and reusable game systems outside the route",async () => {
   assert.match(itemRegistry,/logs:normalLogs/);
   assert.match(inventoryRules,/export function addInventoryItems/);
   assert.match(inventoryGrid,/export function InventoryGrid/);
+  assert.match(shops,/general:/);
+  assert.match(shops,/weapons:/);
+  assert.match(shops,/armor:/);
+  assert.match(shops,/skills:/);
+  assert.match(shops,/if \(store==="general"\) return true/);
+  assert.match(storePanel,/Every item is purchased at the gold value listed in its item file/);
+  assert.match(page,/gold:previous\.gold\+ITEMS\[item\]\.value\*safeAmount/);
+  assert.match(page,/tallowmere-city\.png/);
   assert.doesNotMatch(page,/^const AXES/m);
   assert.doesNotMatch(page,/^function InventoryGrid/m);
   assert.doesNotMatch(page,/^function itemCount/m);

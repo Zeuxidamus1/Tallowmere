@@ -1,6 +1,7 @@
 export type Action = "idle" | "walking-point" | "walking-tree" | "chopping" | "walking-bank" | "banking" | "waiting";
 export type Panel = "inventory" | "skills" | "equipment";
 export type EquipmentSlot = "head" | "weapon" | "body" | "shield" | "legs";
+export type StoreId = "general" | "weapons" | "armor" | "skills";
 
 export type AxeId =
   | "bronze-axe" | "iron-hatchet" | "steel-feller" | "ashen-splitter" | "silverleaf-axe"
@@ -33,7 +34,7 @@ export type ItemDefinition = GearItem | ResourceItem;
 export type EquipmentState = Record<EquipmentSlot,GearId|null>;
 export type TreeState = { id:number;x:number;y:number;charges:number;maxCharges:number;respawnAt:number };
 export type GameState = {
-  xp:number; inventorySlots:InventorySlots; bankItems:ItemCounts; afk:boolean; action:Action;
+  xp:number; gold:number; inventorySlots:InventorySlots; bankItems:ItemCounts; afk:boolean; action:Action;
   targetTreeId:number|null; nextActionAt:number; characterX:number; characterY:number;
   trees:TreeState[]; now:number; equipment:EquipmentState;
 };

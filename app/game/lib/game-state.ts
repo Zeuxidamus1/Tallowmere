@@ -13,7 +13,7 @@ export function initialGame():GameState {
   const bankItems:ItemCounts = {logs:0};
   AXES.filter(axe => axe.id!=="bronze-axe").forEach(axe => {bankItems[axe.id]=1;});
   return {
-    xp:0, inventorySlots:Array<ItemId|null>(MAX_INVENTORY_SLOTS).fill(null), bankItems, afk:true,
+    xp:0, gold:0, inventorySlots:Array<ItemId|null>(MAX_INVENTORY_SLOTS).fill(null), bankItems, afk:true,
     action:"idle", targetTreeId:null, nextActionAt:0, characterX:55, characterY:45,
     trees:makeTrees(), now:Date.now(), equipment:{...STARTING_EQUIPMENT},
   };
