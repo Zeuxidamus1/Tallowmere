@@ -26,6 +26,7 @@
 - Opening the bank now shows stored items beside a dedicated inventory/equipment companion panel, so banking no longer hides the player's pack or worn gear.
 - Every registered inventory item can be left-clicked to deposit one or right-clicked to deposit 1, 5, 10, all, or a custom amount. A universal deposit-all-inventory control is also available.
 - Inventory contents now retain their exact 28-slot positions. Loot, skilling rewards, and bank withdrawals fill the next free slot without regrouping existing items, and players can drag items onto empty or occupied slots to move or swap them.
+- Depositing from the bank-side inventory targets the exact slot clicked; quantity deposits remove that chosen copy first before taking other matching copies.
 - The skills, equipment, and inventory panel can be minimized to its tab strip and reopened from any tab.
 
 ## Visual direction

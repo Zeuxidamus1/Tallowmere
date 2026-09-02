@@ -134,9 +134,12 @@ function addInventoryItems(slots:InventorySlots,id:ItemId,amount:number):Invento
   }
   return next;
 }
-function removeInventoryItems(slots:InventorySlots,id:ItemId,amount:number):InventorySlots {
+function removeInventoryItems(slots:InventorySlots,id:ItemId,amount:number,preferredIndex?:number):InventorySlots {
   const next = slots.slice();
   let remaining = Math.max(0,Math.floor(amount));
+  if (remaining>0 && preferredIndex !== undefined && preferredIndex>=0 && preferredIndex<next.length && next[preferredIndex]===id) {
+    next[preferredIndex]=null; remaining-=1;
+  }
   for (let index=0;index<next.length && remaining>0;index+=1) {
     if (next[index]===id) { next[index]=null; remaining-=1; }
   }
@@ -241,8 +244,8 @@ function ItemIcon({ id, small=false }:{id:ItemId;small?:boolean}) {
 }
 
 function InventoryGrid({ slots, level, mode="equip", onActivate, onItemContext, onMove }:{
-  slots:InventorySlots; level:number; mode?:"equip"|"deposit"; onActivate?:(id:ItemId)=>void;
-  onItemContext?:(event:ReactMouseEvent<HTMLButtonElement>,id:ItemId)=>void; onMove:(from:number,to:number)=>void;
+  slots:InventorySlots; level:number; mode?:"equip"|"deposit"; onActivate?:(id:ItemId,index:number)=>void;
+  onItemContext?:(event:ReactMouseEvent<HTMLButtonElement>,id:ItemId,index:number)=>void; onMove:(from:number,to:number)=>void;
 }) {
   const [draggedSlot,setDraggedSlot] = useState<number|null>(null);
   const lastDragEndedAt = useRef(0);
@@ -264,9 +267,9 @@ function InventoryGrid({ slots, level, mode="equip", onActivate, onItemContext, 
     if (to<0 || to>=MAX_INVENTORY_SLOTS) return;
     event.preventDefault(); onMove(from,to);
   };
-  const activateItem = (id:ItemId) => {
+  const activateItem = (id:ItemId,index:number) => {
     if (Date.now()-lastDragEndedAt.current < 180) return;
-    onActivate?.(id);
+    onActivate?.(id,index);
   };
   return <div className="inventory-grid" aria-label={`Inventory, ${used} of 28 slots used`}>
     {Array.from({length:28}).map((_,index) => {
@@ -278,7 +281,7 @@ function InventoryGrid({ slots, level, mode="equip", onActivate, onItemContext, 
         return <button className={`inventory-slot inventory-slot--filled inventory-slot--gear inventory-slot--draggable ${locked ? "inventory-slot--locked" : ""} ${draggedSlot===index ? "inventory-slot--dragging" : ""}`} type="button" key={index}
           draggable onDragStart={event => {event.dataTransfer.effectAllowed="move";event.dataTransfer.setData("application/x-tallowmere-slot",String(index));setDraggedSlot(index);}}
           onDragEnd={() => {lastDragEndedAt.current=Date.now();setDraggedSlot(null);}} onDragOver={event => event.preventDefault()} onDrop={event => dropItem(event,index)} onKeyDown={event => moveWithKeyboard(event,index)}
-          onClick={() => activateItem(itemId)} onContextMenu={event => onItemContext?.(event,itemId)} title={`${title}. Drag to rearrange.`} aria-label={`${title}. Drag to rearrange.`}>
+          onClick={() => activateItem(itemId,index)} onContextMenu={event => onItemContext?.(event,itemId,index)} title={`${title}. Drag to rearrange.`} aria-label={`${title}. Drag to rearrange.`}>
           <GearIcon id={gearId}/><span className="inventory-equip-mark">{mode==="deposit" ? "↓" : locked ? GEAR[gearId].requiredLevel : "+"}</span>
         </button>;
       }
@@ -287,7 +290,7 @@ function InventoryGrid({ slots, level, mode="equip", onActivate, onItemContext, 
         return <button className={`inventory-slot inventory-slot--filled inventory-slot--draggable ${mode==="deposit" ? "inventory-slot--actionable" : ""} ${draggedSlot===index ? "inventory-slot--dragging" : ""}`} type="button" key={index}
           draggable onDragStart={event => {event.dataTransfer.effectAllowed="move";event.dataTransfer.setData("application/x-tallowmere-slot",String(index));setDraggedSlot(index);}}
           onDragEnd={() => {lastDragEndedAt.current=Date.now();setDraggedSlot(null);}} onDragOver={event => event.preventDefault()} onDrop={event => dropItem(event,index)} onKeyDown={event => moveWithKeyboard(event,index)}
-          onClick={() => mode==="deposit" && activateItem(itemId)} onContextMenu={event => onItemContext?.(event,itemId)} title={`${title}. Drag to rearrange.`} aria-label={`${title}. Drag to rearrange.`}>
+          onClick={() => mode==="deposit" && activateItem(itemId,index)} onContextMenu={event => onItemContext?.(event,itemId,index)} title={`${title}. Drag to rearrange.`} aria-label={`${title}. Drag to rearrange.`}>
           <ItemIcon id={itemId}/><span className="item-amount">1</span>
         </button>;
       }
@@ -318,7 +321,7 @@ export default function Home() {
   const [gearNotice, setGearNotice] = useState("Click a filled slot to unequip it.");
   const [selectedBankItem, setSelectedBankItem] = useState<ItemId>("iron-hatchet");
   const [bankCompanionPanel, setBankCompanionPanel] = useState<"inventory"|"equipment">("inventory");
-  const [bankMenu, setBankMenu] = useState<{item:BankItemId;mode:BankMenuMode;x:number;y:number;custom:boolean} | null>(null);
+  const [bankMenu, setBankMenu] = useState<{item:BankItemId;mode:BankMenuMode;slotIndex?:number;x:number;y:number;custom:boolean} | null>(null);
   const [customWithdrawAmount, setCustomWithdrawAmount] = useState("1");
   const latestGame = useRef(game);
 
@@ -477,7 +480,7 @@ export default function Home() {
       characterY:BANK_POSITION.y,nextActionAt:now+walkTime(previous.characterX,previous.characterY,BANK_POSITION.x,BANK_POSITION.y),now}));
   };
 
-  const depositInventoryItem = (item:ItemId,requested:number) => {
+  const depositInventoryItem = (item:ItemId,requested:number,preferredSlot?:number) => {
     const available = inventoryItemCount(game.inventorySlots,item);
     const amount = Math.min(Math.max(0,Math.floor(requested)),available);
     if (amount <= 0) { setGearNotice(`No ${ITEMS[item].name.toLowerCase()} to deposit.`); return; }
@@ -485,7 +488,7 @@ export default function Home() {
       const safeAmount = Math.min(amount,inventoryItemCount(previous.inventorySlots,item));
       if (safeAmount <= 0) return previous;
       return {...previous,bankItems:setItemCount(previous.bankItems,item,itemCount(previous.bankItems,item)+safeAmount),
-        inventorySlots:removeInventoryItems(previous.inventorySlots,item,safeAmount),now:Date.now()};
+        inventorySlots:removeInventoryItems(previous.inventorySlots,item,safeAmount,preferredSlot),now:Date.now()};
     });
     setGearNotice(`${amount} ${amount===1 ? ITEMS[item].name : ITEMS[item].name.toLowerCase()} deposited.`);
   };
@@ -559,19 +562,19 @@ export default function Home() {
     setBankMenu(null);
   };
 
-  const openBankMenu = (event:ReactMouseEvent<HTMLElement>,item:BankItemId,mode:BankMenuMode) => {
+  const openBankMenu = (event:ReactMouseEvent<HTMLElement>,item:BankItemId,mode:BankMenuMode,slotIndex?:number) => {
     event.preventDefault(); event.stopPropagation();
     const panelBounds = event.currentTarget.closest(".bank-panel")?.getBoundingClientRect();
     if (!panelBounds) return;
     setCustomWithdrawAmount("1");
-    setBankMenu({item,mode,x:Math.max(6,Math.min(panelBounds.width-174,event.clientX-panelBounds.left)),
+    setBankMenu({item,mode,slotIndex,x:Math.max(6,Math.min(panelBounds.width-174,event.clientX-panelBounds.left)),
       y:Math.max(36,Math.min(panelBounds.height-222,event.clientY-panelBounds.top)),custom:false});
   };
 
   const transferFromBankMenu = (requested:number) => {
     if (!bankMenu) return;
     if (bankMenu.mode === "withdraw") withdrawBankItem(bankMenu.item,requested);
-    else { depositInventoryItem(bankMenu.item,requested); setBankMenu(null); }
+    else { depositInventoryItem(bankMenu.item,requested,bankMenu.slotIndex); setBankMenu(null); }
   };
 
   const moveInventorySlot = (from:number,to:number) => setGame(previous => {
@@ -676,8 +679,8 @@ export default function Home() {
               {bankCompanionPanel === "inventory" ? <div className="bank-pack-panel">
                 <div className="bank-pack-heading"><div><strong>Inventory</strong><small>{inventoryUsed} / 28 slots</small></div><b>{28-inventoryUsed}</b></div>
                 <InventoryGrid slots={game.inventorySlots} level={level} mode="deposit" onMove={moveInventorySlot}
-                  onActivate={itemId => {setSelectedBankItem(itemId);depositInventoryItem(itemId,1);}}
-                  onItemContext={(event,itemId) => {setSelectedBankItem(itemId);openBankMenu(event,itemId,"deposit");}}/>
+                  onActivate={(itemId,index) => {setSelectedBankItem(itemId);depositInventoryItem(itemId,1,index);}}
+                  onItemContext={(event,itemId,index) => {setSelectedBankItem(itemId);openBankMenu(event,itemId,"deposit",index);}}/>
                 <p>Drag items to rearrange. Click to deposit one, or right-click for quantity options.</p>
                 <button type="button" className="bank-deposit-all" disabled={inventoryUsed===0} onClick={depositEntireInventory}>Deposit all inventory</button>
               </div> : <div className="bank-equipment-panel">
