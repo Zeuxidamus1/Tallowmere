@@ -8,5 +8,5 @@ export const normalLogs:ResourceItem = {
   skill:"woodcutting",
   description:"Freshly cut wood",
   requiredLevel:1,
-  value:1,
+  value:50,
 };
