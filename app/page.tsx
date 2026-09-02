@@ -256,7 +256,7 @@ export default function Home() {
 
   return <main className="game-shell">
     <header className="topbar">
-      <div className="brand-lockup"><span className="brand-mark" aria-hidden="true"><i/><b/></span><div><h1>Tallowmere</h1><p>A quiet idle adventure</p></div></div>
+      <div className="brand-lockup"><span className="brand-mark" aria-hidden="true"><i/><b/></span><div><h1>Tallowmere</h1><p>The old woods remember</p></div></div>
       <div className="player-stats" aria-label="Player stats">
         <div className="stat-pill"><span className="stat-icon stat-icon--star">✦</span><div><small>Woodcutting</small><strong>Level {level}</strong></div></div>
         <div className="stat-pill"><span className="stat-icon stat-icon--log"/><div><small>Banked logs</small><strong>{formatNumber(game.bankLogs)}</strong></div></div>
@@ -270,7 +270,15 @@ export default function Home() {
           <div className="world-edge world-edge--top"/><div className="world-edge world-edge--left"/>
           <div className="dirt-path dirt-path--vertical"/><div className="dirt-path dirt-path--branch"/>
           <div className="pond"><span className="pond-ripple pond-ripple--one"/><span className="pond-ripple pond-ripple--two"/></div>
-          <div className="flowers flowers--one">✦ · ✦</div><div className="flowers flowers--two">· ✦</div>
+          <div className="world-fog world-fog--one"/><div className="world-fog world-fog--two"/>
+          <div className="ruin-stones ruin-stones--one"><i/><b/><em/></div>
+          <div className="ruin-stones ruin-stones--two"><i/><b/><em/></div>
+          <div className="dead-brush dead-brush--one"><i/><b/><em/></div>
+          <div className="dead-brush dead-brush--two"><i/><b/><em/></div>
+          <div className="mushroom-patch mushroom-patch--one"><i/><b/><em/></div>
+          <div className="mushroom-patch mushroom-patch--two"><i/><b/><em/></div>
+          <div className="road-sign"><i/><b/><span>Bank</span></div>
+          <div className="flowers flowers--one">· ✦ ·</div><div className="flowers flowers--two">✦ ·</div>
           {game.trees.map(tree => <PixelTree key={tree.id} tree={tree} selected={game.targetTreeId===tree.id} chopping={game.action==="chopping" && game.targetTreeId===tree.id} now={game.now} onChoose={() => chooseTree(tree)}/>)}
 
           <button className="bank-building" type="button" aria-label="Enter Tallowmere bank" onClick={visitBank}>
@@ -280,15 +288,17 @@ export default function Home() {
 
           <div className={`player-character player-character--${game.action}`} style={{left:`${game.characterX}%`,top:`${game.characterY}%`}} aria-label={`Your character is ${actionText.toLowerCase()}`}>
             <span className="character-shadow"/><span className="character-hair"/><span className="character-head"/><span className="character-body"/>
-            <span className="character-arm"/><span className="character-legs"/><span className="character-axe"><i/><b/></span>
+            <span className="character-cloak"/><span className="character-belt"/><span className="character-arm"/><span className="character-legs"/><span className="character-axe"><i/><b/></span>
           </div>
         </div>
 
+        <div className="region-plaque" aria-hidden="true"><small>WESTERN MARCH</small><strong>Tallowmere Wood</strong></div>
+
         {welcome && <aside className="welcome-card">
           <button className="welcome-close" type="button" aria-label="Close welcome card" onClick={() => setWelcome(false)}>×</button>
-          <span className="eyebrow">YOUR FIRST JOURNEY</span><h2>Welcome to Tallowmere</h2>
-          <p>Choose a tree to start chopping. Your bronze axe is packed, and AFK mode can gather and bank while you are away.</p>
-          <button className="welcome-action" type="button" onClick={begin}>Begin chopping <span>→</span></button>
+          <span className="eyebrow">THE OLD ROAD AWAITS</span><h2>Enter Tallowmere Wood</h2>
+          <p>Choose a tree and put your bronze axe to work. AFK mode will roam the wood, bank your logs, and keep watch while you are away.</p>
+          <button className="welcome-action" type="button" onClick={begin}>Enter the wood <span>›</span></button>
         </aside>}
 
         {bankOpen && <aside className="bank-panel" aria-label="Tallowmere bank interior">

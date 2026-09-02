@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import { headers } from "next/headers";
 import "./globals.css";
 
-const title = "Tallowmere — A quiet idle adventure";
-const description = "A cozy browser-based idle RPG where the forest keeps growing while you are away.";
+const title = "Tallowmere — The old woods remember";
+const description = "An old-world browser idle RPG where the forest keeps growing while you are away.";
 
 export async function generateMetadata(): Promise<Metadata> {
   const requestHeaders = await headers();

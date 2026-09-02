@@ -12,10 +12,14 @@
 - The camera follows the character while respecting world edges.
 - Chopping includes a wind-up, impact, tree movement, and wood-chip effect.
 - A static GitHub Pages build and deployment workflow are prepared and verified locally.
+- The first old-world visual redesign is complete: darker mossy terrain, worn paths, drifting mist, scattered ruins and woodland props, gnarled trees, and a timber-and-stone bank.
+- The player and interface now use a chunkier late-90s fantasy-RPG style with aged parchment, dark wood, muted metal, and stronger shadows.
+- The axe swing stays behind the character silhouette and uses a tighter arc to avoid clipping and overshooting.
+- The standalone GitHub Pages launcher now lives in `github-pages/`, avoiding a routing collision with the local app preview.
 
-## Next visual direction
+## Visual direction
 
-Move toward a **Well of Souls-inspired atmosphere** while keeping the artwork original:
+Continue the **Well of Souls-era atmosphere** while keeping the artwork original:
 
 - Older online-RPG feeling rather than polished mobile-game presentation.
 - Moodier medieval-fantasy palette with stronger shadows and environmental texture.
@@ -29,10 +33,11 @@ Do not copy Well of Souls artwork, maps, characters, logos, or interface assets 
 ## Resume checklist
 
 1. Review the current local prototype and this checkpoint.
-2. Make the GitHub repository public if using free GitHub Pages, or choose a host that supports a private repository.
-3. Push the prepared hosting update through GitHub Desktop.
-4. Create a focused visual redesign pass for terrain, character, trees, bank, and interface.
-5. Revisit the chopping animation after the new character proportions are established.
+2. Push the new visual checkpoint through GitHub Desktop.
+3. Make the GitHub repository public if using free GitHub Pages, then enable GitHub Actions as the Pages source.
+4. Test the published game URL and confirm saved progress, AFK mode, bank access, tabs, and camera movement.
+5. For the next art pass, add directional player poses, more building details, and another distinct woodland landmark.
+6. For the next gameplay pass, choose whether to deepen woodcutting progression or add the second skill.
 
 ## Repository
 
