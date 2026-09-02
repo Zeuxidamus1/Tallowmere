@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import test from "node:test";
 
 async function render() {
@@ -47,7 +47,7 @@ test("keeps item, skill, shop, and reusable game systems outside the route",asyn
 
   assert.match(normalLogs,/category:"resources"/);
   assert.match(normalLogs,/skill:"woodcutting"/);
-  assert.match(normalLogs,/value:\s*1/);
+  assert.match(normalLogs,/value:\s*50/);
   assert.match(axes,/category:"weapons"/);
   assert.match(axes,/value:\s*500000/);
   assert.match(woodcutting,/id:"woodcutting"/);
@@ -63,9 +63,39 @@ test("keeps item, skill, shop, and reusable game systems outside the route",asyn
   assert.match(shops,/skills:/);
   assert.match(shops,/if \(store==="general"\) return true/);
   assert.match(storePanel,/Every item is purchased at the gold value listed in its item file/);
-  assert.match(page,/gold:previous\.gold\+ITEMS\[item\]\.value\*safeAmount/);
+  assert.match(page,/gold:addGold\(previous\.gold,ITEMS\[item\]\.value\*safeAmount\)/);
+  assert.match(page,/gold:removeGold\(previous\.gold,price\)/);
+  assert.match(page,/bank-item--currency/);
   assert.match(page,/tallowmere-city\.png/);
   assert.doesNotMatch(page,/^const AXES/m);
   assert.doesNotMatch(page,/^function InventoryGrid/m);
   assert.doesNotMatch(page,/^function itemCount/m);
+});
+
+test("keeps gold in one safe numeric balance and switches visual tiers",async () => {
+  const currencyUrl = new URL("../app/game/currency/index.ts",import.meta.url);
+  currencyUrl.searchParams.set("test",`${process.pid}-${Date.now()}`);
+  const {addGold,removeGold,getGoldIcon,formatGold} = await import(currencyUrl.href);
+
+  assert.equal(addGold(150_303,15_000_000),15_150_303);
+  assert.equal(removeGold(15_150_303,14_500_000),650_303);
+  assert.equal(removeGold(650_303,625_303),25_000);
+  assert.equal(removeGold(25_000,24_500),500);
+  assert.equal(removeGold(500,1_000),0);
+  assert.equal(formatGold(150_303),"150,303");
+  assert.match(getGoldIcon(565),/gold-small\.png$/);
+  assert.match(getGoldIcon(9_999),/gold-small\.png$/);
+  assert.match(getGoldIcon(10_000),/gold-medium\.png$/);
+  assert.match(getGoldIcon(15_500),/gold-medium\.png$/);
+  assert.match(getGoldIcon(99_999),/gold-medium\.png$/);
+  assert.match(getGoldIcon(100_000),/gold-large\.png$/);
+  assert.match(getGoldIcon(150_303),/gold-large\.png$/);
+  assert.match(getGoldIcon(999_999),/gold-large\.png$/);
+  assert.match(getGoldIcon(1_000_000),/gold-green\.png$/);
+
+  const assets = ["gold-small.png","gold-medium.png","gold-large.png","gold-green.png"];
+  for (const asset of assets) {
+    const details = await stat(new URL(`../public/assets/currency/${asset}`,import.meta.url));
+    assert.ok(details.size>0,`${asset} should be a real asset`);
+  }
 });

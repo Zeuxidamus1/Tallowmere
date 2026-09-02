@@ -1,9 +1,11 @@
 import { ITEMS } from "../items";
+import { formatGold } from "../currency";
 import { inventoryItemCount, inventorySlotsUsed } from "../lib/inventory";
 import type { StoreDefinition } from "../shops";
 import { WOODCUTTING } from "../skills";
 import type { InventorySlots, ItemId } from "../types";
 import { InventoryGrid } from "./InventoryGrid";
+import { GoldStackIcon } from "./GoldStackIcon";
 import { ItemIcon } from "./ItemIcons";
 
 export function StorePanel({store,inventorySlots,gold,level,selectedItem,notice,onSelect,onSell,onBuy,onMove,onClose}:{
@@ -20,7 +22,7 @@ export function StorePanel({store,inventorySlots,gold,level,selectedItem,notice,
     <header className="store-header">
       <span className="store-header__crest" aria-hidden="true">{store.icon}</span>
       <div><small>{store.keeper}, proprietor</small><h2 id="store-title">{store.name}</h2></div>
-      <div className="store-gold" aria-label={`${gold} gold`}><span>●</span><strong>{gold.toLocaleString("en-US")}</strong><small>gold</small></div>
+      <div className="store-gold" aria-label={`${formatGold(gold)} gold`}><GoldStackIcon amount={gold} size="small"/><strong>{formatGold(gold)}</strong><small>gold</small></div>
       <button className="store-close" type="button" onClick={onClose} aria-label={`Close ${store.name}`}>×</button>
     </header>
 
@@ -39,13 +41,13 @@ export function StorePanel({store,inventorySlots,gold,level,selectedItem,notice,
         <section className="store-offer" aria-live="polite">
           {selected ? <>
             <div className="store-selected-item"><ItemIcon id={selected}/><div><small>SELLING</small><strong>{ITEMS[selected].name}</strong><span>{selectedQuantity} in your pack</span></div></div>
-            <div className="store-price"><small>VALUE EACH</small><strong><span>●</span>{ITEMS[selected].value.toLocaleString("en-US")}</strong></div>
-            <div className="store-price store-price--total"><small>VALUE OF ALL</small><strong><span>●</span>{(ITEMS[selected].value*selectedQuantity).toLocaleString("en-US")}</strong></div>
+            <div className="store-price"><small>VALUE EACH</small><strong><GoldStackIcon amount={ITEMS[selected].value} size="tiny"/>{formatGold(ITEMS[selected].value)}</strong></div>
+            <div className="store-price store-price--total"><small>VALUE OF ALL</small><strong><GoldStackIcon amount={ITEMS[selected].value*selectedQuantity} size="tiny"/>{formatGold(ITEMS[selected].value*selectedQuantity)}</strong></div>
             <div className="store-sell-actions">
               {[1,5,10].map(amount => <button type="button" key={amount} disabled={selectedQuantity<amount} onClick={() => onSell(selected,amount)}>Sell {amount}</button>)}
               <button type="button" className="store-sell-all" onClick={() => onSell(selected,selectedQuantity)}>Sell all {selectedQuantity}</button>
             </div>
-          </> : <div className="store-empty-offer"><span>¤</span><strong>Select an item</strong><p>Mara will make an offer for anything in your inventory.</p></div>}
+          </> : <div className="store-empty-offer"><span><GoldStackIcon amount={gold} size="medium"/></span><strong>Select an item</strong><p>Mara will make an offer for anything in your inventory.</p></div>}
         </section>
       </div> : store.id==="skills" ? <section className="store-skill-stock">
         <div className="store-section-heading"><div><small>GUILD DISCIPLINES</small><strong>Available training</strong></div><span>1</span></div>
@@ -60,7 +62,7 @@ export function StorePanel({store,inventorySlots,gold,level,selectedItem,notice,
             const hasSpace = inventoryUsed<28;
             return <article className={`store-stock-item ${locked ? "store-stock-item--locked" : ""}`} key={item.id}>
               <ItemIcon id={item.id}/><div><strong>{item.name}</strong><small>{item.kind==="axe" ? `${WOODCUTTING.name} ${item.requiredLevel}` : item.slot}</small></div>
-              <span className="store-stock-price">● {item.value.toLocaleString("en-US")}</span>
+              <span className="store-stock-price"><GoldStackIcon amount={item.value} size="tiny"/> {formatGold(item.value)}</span>
               <button type="button" disabled={!canAfford || !hasSpace} onClick={() => onBuy(item.id)}>{!hasSpace ? "Pack full" : canAfford ? "Buy" : "Need gold"}</button>
             </article>;
           })}

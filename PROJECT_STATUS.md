@@ -34,6 +34,8 @@
 - Tallowmere City is now the playable world map, built around a central fountain with a clickable bank, general store, weapon smith, armor outfitter, and skills guild.
 - The General Store purchases every current and future registered inventory item at the gold `value` defined in that item file. Players can sell 1, 5, 10, or all matching items.
 - Gold is part of the saved game state, appears in the top bar and merchant windows, and persists between visits.
+- Gold remains one numeric saved balance. The bank shows one currency entry, and the header, bank, inventory companion, and merchant interfaces automatically choose the supplied small, medium, large, or green stack artwork at 10,000, 100,000, and 1,000,000 gold.
+- All currency changes go through shared `addGold`, `removeGold`, `getGoldIcon`, and `formatGold` rules; spending cannot reduce the balance below zero.
 - The weapon and armor stores sell their respective catalog items into the next available inventory slot; the skills guild presents the active Woodcutting discipline and is ready for future skills.
 - Merchant interfaces share one reusable store panel, while building locations and stock remain organized in `game/shops/`.
 - The original Tallowmere City artwork is stored at `public/tallowmere-city.png` and doubles as the social preview image.

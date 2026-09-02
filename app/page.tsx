@@ -7,6 +7,8 @@ import { GearIcon, ItemIcon, LogIcon } from "./game/components/ItemIcons";
 import { PixelTree } from "./game/components/PixelTree";
 import { CityBuilding } from "./game/components/CityBuilding";
 import { StorePanel } from "./game/components/StorePanel";
+import { GoldStackIcon } from "./game/components/GoldStackIcon";
+import { addGold, formatGold, normalizeGold, removeGold } from "./game/currency";
 import { BANK_POSITION, CHOP_MS, MAX_INVENTORY_SLOTS, MAX_OFFLINE_MS, RESPAWN_MS, SAVE_KEY, TREE_LAYOUT } from "./game/data/world";
 import { formatDuration, formatNumber, initialGame, moveToBank, moveToNextTree, moveToTree, walkTime } from "./game/lib/game-state";
 import { addInventoryItems, inventoryItemCount, inventorySlotsUsed, itemCount, normalizeInventorySlots, normalizeItemCounts, removeInventoryItems, setItemCount } from "./game/lib/inventory";
@@ -68,7 +70,7 @@ export default function Home() {
         const offlineLogs = offlineAxe ? Math.floor(offlineActions * (1 + offlineAxe.bonusChance)) : 0;
         const offlineXp = offlineLogs * WOODCUTTING_XP_PER_LOG;
         bankItems=setItemCount(bankItems,"logs",itemCount(bankItems,"logs")+offlineLogs);
-        restoredGame = { ...base, xp:Math.min(MAX_WOODCUTTING_XP,(saved.xp ?? 0) + offlineXp),gold:Math.max(0,Math.floor(saved.gold ?? 0)),inventorySlots,bankItems,equipment,afk:saved.afk ?? true,
+        restoredGame = { ...base, xp:Math.min(MAX_WOODCUTTING_XP,(saved.xp ?? 0) + offlineXp),gold:normalizeGold(saved.gold),inventorySlots,bankItems,equipment,afk:saved.afk ?? true,
           characterX:saved.characterX ?? base.characterX, characterY:saved.characterY ?? base.characterY,
           trees:savedTrees.map((tree,index) => tree.respawnAt && tree.respawnAt <= now ? { ...tree, charges:tree.maxCharges || base.trees[index].maxCharges, respawnAt:0 } : tree), now };
         if (offlineLogs > 0) restoredOffline = { elapsed, logs:offlineLogs, xp:offlineXp };
@@ -218,22 +220,22 @@ export default function Home() {
     setGame(previous => {
       const safeAmount = Math.min(amount,inventoryItemCount(previous.inventorySlots,item));
       if (safeAmount<=0) return previous;
-      return {...previous,gold:previous.gold+ITEMS[item].value*safeAmount,
+      return {...previous,gold:addGold(previous.gold,ITEMS[item].value*safeAmount),
         inventorySlots:removeInventoryItems(previous.inventorySlots,item,safeAmount),now:Date.now()};
     });
-    setStoreNotice(`Sold ${amount} ${amount===1 ? ITEMS[item].name : ITEMS[item].name.toLowerCase()} for ${formatNumber(earned)} gold.`);
+    setStoreNotice(`Sold ${amount} ${amount===1 ? ITEMS[item].name : ITEMS[item].name.toLowerCase()} for ${formatGold(earned)} gold.`);
     if (amount>=available) setSelectedStoreItem(null);
   };
 
   const buyStoreItem = (item:ItemId) => {
     const price = ITEMS[item].value;
     if (inventoryUsed>=MAX_INVENTORY_SLOTS) {setStoreNotice("Your inventory is full.");return;}
-    if (game.gold<price) {setStoreNotice(`You need ${formatNumber(price-game.gold)} more gold.`);return;}
+    if (game.gold<price) {setStoreNotice(`You need ${formatGold(price-game.gold)} more gold.`);return;}
     setGame(previous => {
       if (inventorySlotsUsed(previous)>=MAX_INVENTORY_SLOTS || previous.gold<price) return previous;
-      return {...previous,gold:previous.gold-price,inventorySlots:addInventoryItems(previous.inventorySlots,item,1),now:Date.now()};
+      return {...previous,gold:removeGold(previous.gold,price),inventorySlots:addInventoryItems(previous.inventorySlots,item,1),now:Date.now()};
     });
-    setStoreNotice(`${ITEMS[item].name} purchased for ${formatNumber(price)} gold.`);
+    setStoreNotice(`${ITEMS[item].name} purchased for ${formatGold(price)} gold.`);
   };
 
   const depositInventoryItem = (item:ItemId,requested:number,preferredSlot?:number) => {
@@ -368,7 +370,7 @@ export default function Home() {
       <div className="player-stats" aria-label="Player stats">
         <div className="stat-pill"><span className="stat-icon stat-icon--star">✦</span><div><small>{WOODCUTTING.name}</small><strong>Level {level}</strong></div></div>
         <div className="stat-pill"><span className="stat-icon stat-icon--log"/><div><small>Banked logs</small><strong>{formatNumber(bankLogs)}</strong></div></div>
-        <div className="stat-pill stat-pill--gold"><span className="stat-icon stat-icon--gold">●</span><div><small>Gold</small><strong>{formatNumber(game.gold)}</strong></div></div>
+        <div className="stat-pill stat-pill--gold"><span className="stat-icon stat-icon--gold"><GoldStackIcon amount={game.gold} size="small"/></span><div><small>Gold</small><strong>{formatGold(game.gold)}</strong></div></div>
         <div className="world-size"><span/>100 × 100 TILES</div>
       </div>
     </header>
@@ -400,10 +402,13 @@ export default function Home() {
         </aside>}
 
         {bankOpen && <aside className="bank-panel bank-panel--vault" aria-label="Tallowmere bank interior">
-          <div className="bank-classic-title"><span>{formatNumber(bankLogs)}</span><strong>The Bank of Tallowmere</strong><button type="button" onClick={() => {setBankOpen(false);setBankMenu(null);}} aria-label="Close bank">×</button></div>
+          <div className="bank-classic-title"><span className="bank-title-gold"><GoldStackIcon amount={game.gold} size="tiny"/><b>{formatGold(game.gold)}</b></span><strong>The Bank of Tallowmere</strong><button type="button" onClick={() => {setBankOpen(false);setBankMenu(null);}} aria-label="Close bank">×</button></div>
           <div className="bank-workspace">
             <div className="bank-vault-main">
               <div className="bank-classic-grid" aria-label="Stored items">
+                <div className="bank-item bank-item--currency" aria-label={`${formatGold(game.gold)} gold in one bank stack`}>
+                  <GoldStackIcon amount={game.gold} size="medium"/><span>{formatGold(game.gold)}</span><small>Gold</small>
+                </div>
                 {bankCatalog.map(id => {
                   const item = ITEMS[id];
                   const inBank = itemCount(game.bankItems,id);
@@ -427,6 +432,7 @@ export default function Home() {
               </div>
               {bankCompanionPanel === "inventory" ? <div className="bank-pack-panel">
                 <div className="bank-pack-heading"><div><strong>Inventory</strong><small>{inventoryUsed} / 28 slots</small></div><b>{28-inventoryUsed}</b></div>
+                <div className="bank-pack-currency" aria-label={`${formatGold(game.gold)} gold`}><GoldStackIcon amount={game.gold} size="small"/><span><small>Gold balance</small><strong>{formatGold(game.gold)}</strong></span></div>
                 <InventoryGrid slots={game.inventorySlots} level={level} mode="deposit" onMove={moveInventorySlot}
                   onActivate={(itemId,index) => {setSelectedBankItem(itemId);depositInventoryItem(itemId,1,index);}}
                   onItemContext={(event,itemId,index) => {setSelectedBankItem(itemId);openBankMenu(event,itemId,"deposit",index);}}/>
@@ -463,7 +469,7 @@ export default function Home() {
         </aside>}
 
         {activeStore && <StorePanel store={STORES[activeStore]} inventorySlots={game.inventorySlots} gold={game.gold} level={level}
-          selectedItem={selectedStoreItem} notice={storeNotice} onSelect={item => {setSelectedStoreItem(item);setStoreNotice(`${ITEMS[item].name} is worth ${formatNumber(ITEMS[item].value)} gold each.`);}}
+          selectedItem={selectedStoreItem} notice={storeNotice} onSelect={item => {setSelectedStoreItem(item);setStoreNotice(`${ITEMS[item].name} is worth ${formatGold(ITEMS[item].value)} gold each.`);}}
           onSell={sellStoreItem} onBuy={buyStoreItem} onMove={moveInventorySlot} onClose={() => setActiveStore(null)}/>}
 
         <div className="status-dock" aria-live="polite">
