@@ -48,6 +48,7 @@ test("keeps item, skill, shop, and reusable game systems outside the route",asyn
   assert.match(normalLogs,/category:"resources"/);
   assert.match(normalLogs,/skill:"woodcutting"/);
   assert.match(normalLogs,/value:\s*50/);
+  assert.match(normalLogs,/noteable:true/);
   assert.match(axes,/category:"weapons"/);
   assert.match(axes,/value:\s*500000/);
   assert.match(woodcutting,/id:"woodcutting"/);
@@ -56,7 +57,10 @@ test("keeps item, skill, shop, and reusable game systems outside the route",asyn
   assert.match(woodcutting,/MAX_WOODCUTTING_XP/);
   assert.match(itemRegistry,/logs:normalLogs/);
   assert.match(inventoryRules,/export function addInventoryItems/);
+  assert.match(inventoryRules,/export function addNotedInventoryItems/);
+  assert.match(inventoryRules,/export function notedInventoryCapacity/);
   assert.match(inventoryGrid,/export function InventoryGrid/);
+  assert.match(inventoryGrid,/inventory-slot--noted/);
   assert.match(shops,/general:/);
   assert.match(shops,/weapons:/);
   assert.match(shops,/armor:/);
@@ -66,6 +70,7 @@ test("keeps item, skill, shop, and reusable game systems outside the route",asyn
   assert.match(page,/gold:addGold\(previous\.gold,ITEMS\[item\]\.value\*safeAmount\)/);
   assert.match(page,/gold:removeGold\(previous\.gold,price\)/);
   assert.match(page,/bank-item--currency/);
+  assert.match(page,/Withdraw as Note/);
   assert.match(page,/tallowmere-city\.png/);
   assert.doesNotMatch(page,/^const AXES/m);
   assert.doesNotMatch(page,/^function InventoryGrid/m);

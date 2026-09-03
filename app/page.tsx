@@ -11,7 +11,7 @@ import { GoldStackIcon } from "./game/components/GoldStackIcon";
 import { addGold, formatGold, normalizeGold, removeGold } from "./game/currency";
 import { BANK_POSITION, CHOP_MS, MAX_INVENTORY_SLOTS, MAX_OFFLINE_MS, RESPAWN_MS, SAVE_KEY, TREE_LAYOUT } from "./game/data/world";
 import { formatDuration, formatNumber, initialGame, moveToBank, moveToNextTree, moveToTree, walkTime } from "./game/lib/game-state";
-import { addInventoryItems, inventoryItemCount, inventorySlotsUsed, itemCount, normalizeInventorySlots, normalizeItemCounts, removeInventoryItems, setItemCount } from "./game/lib/inventory";
+import { addInventoryItems, addNotedInventoryItems, emptyInventorySlots, inventoryItemCount, inventorySlotItemId, inventorySlotsUsed, isNoteableItem, itemCount, normalizeInventorySlots, normalizeItemCounts, notedInventoryCapacity, removeInventoryItems, setItemCount } from "./game/lib/inventory";
 import { AXES, AXE_BY_ID, GEAR, ITEMS } from "./game/items";
 import { CITY_BANK, STORE_ORDER, STORES } from "./game/shops";
 import { equippedWoodcuttingAxe, hasWoodcuttingAxe, MAX_WOODCUTTING_XP, WOODCUTTING, WOODCUTTING_XP_PER_LOG, woodcuttingLevelFromXp, xpForWoodcuttingLevel } from "./game/skills";
@@ -32,6 +32,7 @@ export default function Home() {
   const [gearNotice, setGearNotice] = useState("Click a filled slot to unequip it.");
   const [selectedBankItem, setSelectedBankItem] = useState<ItemId>("iron-hatchet");
   const [bankCompanionPanel, setBankCompanionPanel] = useState<"inventory"|"equipment">("inventory");
+  const [withdrawAsNote, setWithdrawAsNote] = useState(false);
   const [bankMenu, setBankMenu] = useState<{item:BankItemId;mode:BankMenuMode;slotIndex?:number;x:number;y:number;custom:boolean} | null>(null);
   const [customWithdrawAmount, setCustomWithdrawAmount] = useState("1");
   const latestGame = useRef(game);
@@ -158,7 +159,7 @@ export default function Home() {
   const inventoryUsed = inventorySlotsUsed(game);
   const inventoryLogs = inventoryItemCount(game.inventorySlots,"logs");
   const bankLogs = itemCount(game.bankItems,"logs");
-  const firstInventoryItem = game.inventorySlots.find((item):item is ItemId => Boolean(item)) ?? null;
+  const firstInventoryItem = game.inventorySlots.map(inventorySlotItemId).find((item):item is ItemId => Boolean(item)) ?? null;
   const equippedCount = Object.values(game.equipment).filter(Boolean).length;
   const currentAxe = equippedWoodcuttingAxe(game);
   const selectedItem = ITEMS[selectedBankItem];
@@ -204,7 +205,7 @@ export default function Home() {
 
   const visitStore = (storeId:StoreId) => {
     const store = STORES[storeId];
-    const firstItem = game.inventorySlots.find((item):item is ItemId => Boolean(item)) ?? null;
+    const firstItem = game.inventorySlots.map(inventorySlotItemId).find((item):item is ItemId => Boolean(item)) ?? null;
     setWelcome(false); setBankOpen(false); setBankMenu(null); setActiveStore(storeId); setSelectedStoreItem(firstItem);
     setStoreNotice(storeId==="general" ? "Select an item and choose how many to sell." : `Welcome to ${store.name}.`);
     const now = game.now;
@@ -258,7 +259,7 @@ export default function Home() {
         const amount = inventoryItemCount(previous.inventorySlots,id);
         return amount > 0 ? setItemCount(items,id,itemCount(items,id)+amount) : items;
       },previous.bankItems);
-      return {...previous,bankItems,inventorySlots:Array<ItemId|null>(MAX_INVENTORY_SLOTS).fill(null),now:Date.now()};
+      return {...previous,bankItems,inventorySlots:emptyInventorySlots(),now:Date.now()};
     });
     setGearNotice(`${inventoryUsed} inventory ${inventoryUsed===1 ? "item" : "items"} deposited.`);
     setBankMenu(null);
@@ -297,18 +298,23 @@ export default function Home() {
   const withdrawBankItem = (item:BankItemId,requested:number) => {
     const freeSlots = MAX_INVENTORY_SLOTS-inventoryUsed;
     const available = itemCount(game.bankItems,item);
-    const amount = Math.min(Math.max(0,Math.floor(requested)),freeSlots,available);
+    const desired = Number.isFinite(requested) ? Math.max(0,Math.floor(requested)) : 0;
+    const useNote = withdrawAsNote && isNoteableItem(item);
+    const amount = Math.min(desired,available,useNote ? notedInventoryCapacity(game.inventorySlots,item) : freeSlots);
     if (amount <= 0) {
-      setGearNotice(freeSlots <= 0 ? "Your inventory is full." : "That item is not currently in the bank.");
+      setGearNotice(available<=0 ? "That item is not currently in the bank." : "Your inventory is full.");
       setBankMenu(null); return;
     }
     setGame(previous => {
-      const safeAmount = Math.min(amount,MAX_INVENTORY_SLOTS-inventorySlotsUsed(previous),itemCount(previous.bankItems,item));
+      const previousAvailable = itemCount(previous.bankItems,item);
+      const safeAmount = useNote
+        ? Math.min(amount,previousAvailable,notedInventoryCapacity(previous.inventorySlots,item))
+        : Math.min(amount,MAX_INVENTORY_SLOTS-inventorySlotsUsed(previous),previousAvailable);
       if (safeAmount <= 0) return previous;
       return {...previous,bankItems:setItemCount(previous.bankItems,item,itemCount(previous.bankItems,item)-safeAmount),
-        inventorySlots:addInventoryItems(previous.inventorySlots,item,safeAmount),now:Date.now()};
+        inventorySlots:useNote ? addNotedInventoryItems(previous.inventorySlots,item,safeAmount) : addInventoryItems(previous.inventorySlots,item,safeAmount),now:Date.now()};
     });
-    setGearNotice(`${amount} ${amount===1 ? ITEMS[item].name : ITEMS[item].name.toLowerCase()} withdrawn.`);
+    setGearNotice(`${amount} ${amount===1 ? ITEMS[item].name : ITEMS[item].name.toLowerCase()} withdrawn${useNote ? " as a noted stack" : ""}.`);
     setBankMenu(null);
   };
 
@@ -415,15 +421,21 @@ export default function Home() {
                   const locked = level < item.requiredLevel;
                   return <button className={`bank-item ${id==="logs" ? "bank-item--logs" : "bank-item--item"} ${locked ? "bank-item--locked" : ""} ${selectedBankItem===id ? "bank-item--selected" : ""}`} type="button" key={id}
                     onClick={() => {setSelectedBankItem(id);withdrawBankItem(id,1);}} onContextMenu={event => {setSelectedBankItem(id);openBankMenu(event,id,"withdraw");}}
-                    title={`${item.name} — left-click withdraws 1, right-click for more options`}>
+                    title={`${item.name} — left-click withdraws 1${withdrawAsNote && isNoteableItem(id) ? " as a note" : ""}, right-click for more options`}>
                     <ItemIcon id={id}/><span>{id==="logs" ? formatNumber(inBank) : `Lv ${item.requiredLevel}`}</span><small>{formatNumber(inBank)}</small>
                   </button>;
                 })}
               </div>
               <div className="bank-selected-item"><ItemIcon id={selectedItem.id}/><div><small>SELECTED ITEM</small><strong>{selectedItem.name}</strong><span>{selectedItem.kind==="axe" ? `${WOODCUTTING.name} ${selectedItem.requiredLevel} · ${Math.round(AXE_BY_ID[selectedItem.id as AxeId].bonusChance*100)}% extra-log chance` : selectedItem.description}</span></div>
-                {selectedItemEquipped ? <button type="button" disabled>Equipped</button> : selectedItemInBank ? <button type="button" onClick={() => withdrawBankItem(selectedBankItem,1)}>Withdraw 1</button> : selectedItemInPack ? <button type="button" onClick={() => depositInventoryItem(selectedBankItem,1)}>Store 1</button> : <button type="button" disabled>Unavailable</button>}
+                {selectedItemEquipped ? <button type="button" disabled>Equipped</button> : selectedItemInBank ? <button type="button" onClick={() => withdrawBankItem(selectedBankItem,1)}>Withdraw{withdrawAsNote && isNoteableItem(selectedBankItem) ? " note" : ""} 1</button> : selectedItemInPack ? <button type="button" onClick={() => depositInventoryItem(selectedBankItem,1)}>Store 1</button> : <button type="button" disabled>Unavailable</button>}
               </div>
-              <div className="bank-classic-controls"><button type="button" className="bank-deposit" disabled={inventoryUsed===0} onClick={depositEntireInventory}>{inventoryUsed>0 ? `Deposit inventory (${inventoryUsed})` : "Inventory empty"}</button><span>{gearNotice}</span><small>Bank: left withdraws · right opens options</small></div>
+              <div className="bank-classic-controls">
+                <button type="button" className="bank-deposit" disabled={inventoryUsed===0} onClick={depositEntireInventory}>{inventoryUsed>0 ? `Deposit inventory (${inventoryUsed})` : "Inventory empty"}</button>
+                <button type="button" role="switch" aria-checked={withdrawAsNote} className={`bank-note-toggle ${withdrawAsNote ? "bank-note-toggle--on" : ""}`} onClick={() => {setWithdrawAsNote(value => !value);setBankMenu(null);setGearNotice(withdrawAsNote ? "Normal item withdrawal enabled." : "Withdraw as Note enabled.");}}>
+                  <span className="bank-note-toggle__icon" aria-hidden="true">N</span><span><strong>Withdraw as Note</strong><small>{withdrawAsNote ? "ON · stacks in one slot" : "OFF · normal items"}</small></span>
+                </button>
+                <span>{gearNotice}</span><small>Bank: left withdraws · right opens options</small>
+              </div>
             </div>
             <div className="bank-companion" aria-label="Inventory and equipment">
               <div className="bank-companion-tabs">
@@ -455,15 +467,15 @@ export default function Home() {
           {bankMenu && <div className="bank-context-menu" style={{left:bankMenu.x,top:bankMenu.y}}>
             <strong>{ITEMS[bankMenu.item].name}</strong>
             {!bankMenu.custom ? <>
-              <button type="button" onClick={() => transferFromBankMenu(1)}>{bankMenu.mode === "withdraw" ? "Withdraw" : "Deposit"} 1</button>
-              <button type="button" onClick={() => transferFromBankMenu(5)}>{bankMenu.mode === "withdraw" ? "Withdraw" : "Deposit"} 5</button>
-              <button type="button" onClick={() => transferFromBankMenu(10)}>{bankMenu.mode === "withdraw" ? "Withdraw" : "Deposit"} 10</button>
-              <button type="button" onClick={() => transferFromBankMenu(bankMenu.mode === "withdraw" ? itemCount(game.bankItems,bankMenu.item) : inventoryItemCount(game.inventorySlots,bankMenu.item))}>{bankMenu.mode === "withdraw" ? "Withdraw" : "Deposit"} all</button>
-              <button type="button" onClick={() => setBankMenu({...bankMenu,custom:true})}>Custom amount…</button>
+              <button type="button" onClick={() => transferFromBankMenu(1)}>{bankMenu.mode === "withdraw" ? withdrawAsNote && isNoteableItem(bankMenu.item) ? "Withdraw noted" : "Withdraw" : "Deposit"} 1</button>
+              <button type="button" onClick={() => transferFromBankMenu(5)}>{bankMenu.mode === "withdraw" ? withdrawAsNote && isNoteableItem(bankMenu.item) ? "Withdraw noted" : "Withdraw" : "Deposit"} 5</button>
+              <button type="button" onClick={() => transferFromBankMenu(10)}>{bankMenu.mode === "withdraw" ? withdrawAsNote && isNoteableItem(bankMenu.item) ? "Withdraw noted" : "Withdraw" : "Deposit"} 10</button>
+              <button type="button" onClick={() => transferFromBankMenu(bankMenu.mode === "withdraw" ? itemCount(game.bankItems,bankMenu.item) : inventoryItemCount(game.inventorySlots,bankMenu.item))}>{bankMenu.mode === "withdraw" ? withdrawAsNote && isNoteableItem(bankMenu.item) ? "Withdraw noted" : "Withdraw" : "Deposit"} all</button>
+              <button type="button" onClick={() => setBankMenu({...bankMenu,custom:true})}>{bankMenu.mode === "withdraw" ? "Withdraw X…" : "Deposit X…"}</button>
               <button type="button" className="bank-menu-cancel" onClick={() => setBankMenu(null)}>Cancel</button>
             </> : <form onSubmit={event => {event.preventDefault();transferFromBankMenu(Number(customWithdrawAmount));}}>
               <label htmlFor="custom-withdraw">Amount</label><input id="custom-withdraw" type="number" min="1" max={bankMenu.mode === "withdraw" ? itemCount(game.bankItems,bankMenu.item) : inventoryItemCount(game.inventorySlots,bankMenu.item)} value={customWithdrawAmount} onChange={event => setCustomWithdrawAmount(event.target.value)}/>
-              <div><button type="submit">{bankMenu.mode === "withdraw" ? "Withdraw" : "Deposit"}</button><button type="button" onClick={() => setBankMenu({...bankMenu,custom:false})}>Back</button></div>
+              <div><button type="submit">{bankMenu.mode === "withdraw" ? withdrawAsNote && isNoteableItem(bankMenu.item) ? "Withdraw note" : "Withdraw" : "Deposit"}</button><button type="button" onClick={() => setBankMenu({...bankMenu,custom:false})}>Back</button></div>
             </form>}
           </div>}
         </aside>}

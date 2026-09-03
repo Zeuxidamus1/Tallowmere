@@ -9,4 +9,5 @@ export const normalLogs:ResourceItem = {
   description:"Freshly cut wood",
   requiredLevel:1,
   value:50,
+  noteable:true,
 };

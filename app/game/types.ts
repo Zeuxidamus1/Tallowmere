@@ -16,19 +16,21 @@ export type ItemId = "logs" | GearId;
 export type BankItemId = ItemId;
 export type BankMenuMode = "withdraw" | "deposit";
 export type ItemCounts = Partial<Record<ItemId,number>>;
-export type InventorySlots = Array<ItemId|null>;
+export type NotedItemStack = { noted:true; itemId:ItemId; quantity:number };
+export type InventorySlot = ItemId | NotedItemStack | null;
+export type InventorySlots = InventorySlot[];
 export type ItemCategory = "resources" | "weapons" | "armor";
 
 export type GearItem = {
   id:GearId; name:string; slot:EquipmentSlot; description:string;
-  kind:"axe"|"armor"; category:"weapons"|"armor"; requiredLevel:number; value:number; skill?:string;
+  kind:"axe"|"armor"; category:"weapons"|"armor"; requiredLevel:number; value:number; skill?:string; noteable?:boolean;
 };
 export type AxeItem = GearItem & {
   id:AxeId; kind:"axe"; category:"weapons"; bonusChance:number; metal:string; edge:string; handle:string; shape:number;
 };
 export type ResourceItem = {
   id:"logs"; name:string; kind:"resource"; category:"resources"; description:string;
-  requiredLevel:number; value:number; skill?:string;
+  requiredLevel:number; value:number; skill?:string; noteable?:boolean;
 };
 export type ItemDefinition = GearItem | ResourceItem;
 export type EquipmentState = Record<EquipmentSlot,GearId|null>;

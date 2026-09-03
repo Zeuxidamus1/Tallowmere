@@ -1,6 +1,8 @@
 import { useRef, useState, type DragEvent as ReactDragEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from "react";
 import { MAX_INVENTORY_SLOTS } from "../data/world";
 import { GEAR, ITEMS } from "../items";
+import { formatNumber } from "../lib/game-state";
+import { isNotedItemStack } from "../lib/inventory";
 import { WOODCUTTING } from "../skills";
 import type { GearId, InventorySlots, ItemId } from "../types";
 import { GearIcon, ItemIcon } from "./ItemIcons";
@@ -35,7 +37,18 @@ export function InventoryGrid({slots,level,mode="equip",onActivate,onItemContext
   };
   return <div className="inventory-grid" aria-label={`Inventory, ${used} of 28 slots used`}>
     {Array.from({length:28}).map((_,index) => {
-      const itemId = slots[index];
+      const slot = slots[index];
+      if (isNotedItemStack(slot)) {
+        const itemId = slot.itemId;
+        const title = mode==="deposit" ? `Deposit noted ${ITEMS[itemId].name}` : mode==="sell" ? `Select noted ${ITEMS[itemId].name} to sell` : `${ITEMS[itemId].name} note (cannot be used or equipped)`;
+        return <button className={`inventory-slot inventory-slot--filled inventory-slot--noted inventory-slot--draggable ${mode!=="equip" ? "inventory-slot--actionable" : ""} ${draggedSlot===index ? "inventory-slot--dragging" : ""}`} type="button" key={index}
+          draggable onDragStart={event => {event.dataTransfer.effectAllowed="move";event.dataTransfer.setData("application/x-tallowmere-slot",String(index));setDraggedSlot(index);}}
+          onDragEnd={event => {lastDragEndedAt.current=event.timeStamp;setDraggedSlot(null);}} onDragOver={event => event.preventDefault()} onDrop={event => dropItem(event,index)} onKeyDown={event => moveWithKeyboard(event,index)}
+          onClick={event => mode!=="equip" && activateItem(itemId,index,event.timeStamp)} onContextMenu={event => onItemContext?.(event,itemId,index)} title={`${title}. Drag to rearrange.`} aria-label={`${title}, quantity ${formatNumber(slot.quantity)}. Drag to rearrange.`}>
+          <span className="inventory-note-sheet" aria-hidden="true">N</span><ItemIcon id={itemId}/><span className="item-amount">{formatNumber(slot.quantity)}</span>
+        </button>;
+      }
+      const itemId = slot;
       if (itemId && ITEMS[itemId].kind!=="resource") {
         const gearId = itemId as GearId;
         const locked = mode==="equip" && GEAR[gearId].requiredLevel>level;

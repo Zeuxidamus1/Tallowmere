@@ -9,7 +9,7 @@ import { AXES } from "./weapons/axes";
 export { AXES };
 
 export const ARMOR:GearItem[] = [leatherCap,travelerTunic,woodenBuckler,wornTrousers];
-export const GEAR = Object.fromEntries([...AXES,...ARMOR].map(item => [item.id,item])) as Record<GearId,GearItem>;
+export const GEAR = Object.fromEntries([...AXES,...ARMOR].map(item => [item.id,{...item,noteable:item.noteable??true}])) as Record<GearId,GearItem>;
 export const AXE_BY_ID = Object.fromEntries(AXES.map(item => [item.id,item])) as Record<AxeId,AxeItem>;
 export const ITEMS = {logs:normalLogs,...GEAR} as Record<ItemId,ItemDefinition>;
 
