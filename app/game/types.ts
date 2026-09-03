@@ -2,6 +2,7 @@ export type Action = "idle" | "walking-point" | "walking-tree" | "chopping" | "w
 export type Panel = "inventory" | "skills" | "equipment";
 export type EquipmentSlot = "head" | "weapon" | "body" | "shield" | "legs";
 export type StoreId = "general" | "weapons" | "armor" | "skills";
+export type StoreTradeMode = "buy" | "sell";
 
 export type AxeId =
   | "bronze-axe" | "iron-hatchet" | "steel-feller" | "ashen-splitter" | "silverleaf-axe"

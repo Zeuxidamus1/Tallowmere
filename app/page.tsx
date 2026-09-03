@@ -13,9 +13,9 @@ import { BANK_POSITION, CHOP_MS, MAX_INVENTORY_SLOTS, MAX_OFFLINE_MS, RESPAWN_MS
 import { formatDuration, formatNumber, initialGame, moveToBank, moveToNextTree, moveToTree, walkTime } from "./game/lib/game-state";
 import { addInventoryItems, addNotedInventoryItems, emptyInventorySlots, inventoryItemCount, inventorySlotItemId, inventorySlotsUsed, isNoteableItem, itemCount, normalizeInventorySlots, normalizeItemCounts, notedInventoryCapacity, removeInventoryItems, setItemCount } from "./game/lib/inventory";
 import { AXES, AXE_BY_ID, GEAR, ITEMS } from "./game/items";
-import { CITY_BANK, STORE_ORDER, STORES } from "./game/shops";
+import { CITY_BANK, storeAcceptsItem, STORE_ORDER, STORES } from "./game/shops";
 import { equippedWoodcuttingAxe, hasWoodcuttingAxe, MAX_WOODCUTTING_XP, WOODCUTTING, WOODCUTTING_XP_PER_LOG, woodcuttingLevelFromXp, xpForWoodcuttingLevel } from "./game/skills";
-import type { AxeId, BankItemId, BankMenuMode, EquipmentSlot, EquipmentState, GameState, GearId, ItemCounts, ItemId, OfflineSummary, Panel, StoreId, TreeState } from "./game/types";
+import type { AxeId, BankItemId, BankMenuMode, EquipmentSlot, EquipmentState, GameState, GearId, ItemCounts, ItemId, OfflineSummary, Panel, StoreId, StoreTradeMode, TreeState } from "./game/types";
 
 export default function Home() {
   const [game, setGame] = useState<GameState>(initialGame);
@@ -26,6 +26,7 @@ export default function Home() {
   const [bankOpen, setBankOpen] = useState(false);
   const [activeStore, setActiveStore] = useState<StoreId|null>(null);
   const [selectedStoreItem, setSelectedStoreItem] = useState<ItemId|null>(null);
+  const [storeTradeMode, setStoreTradeMode] = useState<StoreTradeMode>("sell");
   const [storeNotice, setStoreNotice] = useState("Select an item to begin trading.");
   const [offline, setOffline] = useState<OfflineSummary | null>(null);
   const [moveMarker, setMoveMarker] = useState<{x:number;y:number} | null>(null);
@@ -205,15 +206,18 @@ export default function Home() {
 
   const visitStore = (storeId:StoreId) => {
     const store = STORES[storeId];
-    const firstItem = game.inventorySlots.map(inventorySlotItemId).find((item):item is ItemId => Boolean(item)) ?? null;
-    setWelcome(false); setBankOpen(false); setBankMenu(null); setActiveStore(storeId); setSelectedStoreItem(firstItem);
-    setStoreNotice(storeId==="general" ? "Select an item and choose how many to sell." : `Welcome to ${store.name}.`);
+    const firstStockItem = store.stock[0] ?? null;
+    const firstInventoryItem = game.inventorySlots.map(inventorySlotItemId).find((item):item is ItemId => item!==null && storeAcceptsItem(storeId,item)) ?? null;
+    setWelcome(false); setBankOpen(false); setBankMenu(null); setActiveStore(storeId);
+    setSelectedStoreItem(firstStockItem ?? firstInventoryItem); setStoreTradeMode(firstStockItem ? "buy" : "sell");
+    setStoreNotice(firstStockItem ? "Select shop stock to view its price, or choose an inventory item to sell." : storeId==="general" ? "Choose any inventory item to sell." : `Welcome to ${store.name}.`);
     const now = game.now;
     setGame(previous => ({...previous,afk:false,action:"walking-point",targetTreeId:null,characterX:store.doorX,
       characterY:store.doorY,nextActionAt:now+walkTime(previous.characterX,previous.characterY,store.doorX,store.doorY),now}));
   };
 
   const sellStoreItem = (item:ItemId,requested:number) => {
+    if (!activeStore || !storeAcceptsItem(activeStore,item)) {setStoreNotice(`${STORES[activeStore ?? "general"].name} does not buy that item.`);return;}
     const available = inventoryItemCount(game.inventorySlots,item);
     const amount = Math.min(Math.max(0,Math.floor(requested)),available);
     if (amount<=0) {setStoreNotice(`You have no ${ITEMS[item].name.toLowerCase()} to sell.`);return;}
@@ -229,6 +233,7 @@ export default function Home() {
   };
 
   const buyStoreItem = (item:ItemId) => {
+    if (!activeStore || !STORES[activeStore].stock.includes(item)) {setStoreNotice("That item is not stocked by this shop.");return;}
     const price = ITEMS[item].value;
     if (inventoryUsed>=MAX_INVENTORY_SLOTS) {setStoreNotice("Your inventory is full.");return;}
     if (game.gold<price) {setStoreNotice(`You need ${formatGold(price-game.gold)} more gold.`);return;}
@@ -481,7 +486,7 @@ export default function Home() {
         </aside>}
 
         {activeStore && <StorePanel store={STORES[activeStore]} inventorySlots={game.inventorySlots} gold={game.gold} level={level}
-          selectedItem={selectedStoreItem} notice={storeNotice} onSelect={item => {setSelectedStoreItem(item);setStoreNotice(`${ITEMS[item].name} is worth ${formatGold(ITEMS[item].value)} gold each.`);}}
+          selectedItem={selectedStoreItem} tradeMode={storeTradeMode} notice={storeNotice} onSelect={(item,mode) => {setSelectedStoreItem(item);setStoreTradeMode(mode);setStoreNotice(mode==="buy" ? `${ITEMS[item].name} costs ${formatGold(ITEMS[item].value)} gold.` : storeAcceptsItem(activeStore,item) ? `${ITEMS[item].name} sells for ${formatGold(ITEMS[item].value)} gold each.` : `${STORES[activeStore].name} does not buy that item.`);}}
           onSell={sellStoreItem} onBuy={buyStoreItem} onMove={moveInventorySlot} onClose={() => setActiveStore(null)}/>}
 
         <div className="status-dock" aria-live="polite">

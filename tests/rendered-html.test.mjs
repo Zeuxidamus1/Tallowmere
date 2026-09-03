@@ -66,7 +66,13 @@ test("keeps item, skill, shop, and reusable game systems outside the route",asyn
   assert.match(shops,/armor:/);
   assert.match(shops,/skills:/);
   assert.match(shops,/if \(store==="general"\) return true/);
-  assert.match(storePanel,/Every item is purchased at the gold value listed in its item file/);
+  assert.match(storePanel,/const shopStock = Array\.from\(new Set\(store\.stock\)\)/);
+  assert.match(storePanel,/store-item-grid/);
+  assert.match(storePanel,/YOUR INVENTORY/);
+  assert.match(storePanel,/BUY PRICE/);
+  assert.match(storePanel,/SELL PRICE/);
+  assert.match(storePanel,/onSelect\(itemId,"buy"\)/);
+  assert.match(storePanel,/onSelect\(item,"sell"\)/);
   assert.match(page,/gold:addGold\(previous\.gold,ITEMS\[item\]\.value\*safeAmount\)/);
   assert.match(page,/gold:removeGold\(previous\.gold,price\)/);
   assert.match(page,/bank-item--currency/);

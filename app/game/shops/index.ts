@@ -1,5 +1,5 @@
-import { ARMOR, AXES } from "../items";
-import type { GearId, ItemId, StoreId } from "../types";
+import { ARMOR, AXES, ITEMS } from "../items";
+import type { ItemId, StoreId } from "../types";
 
 export type CityBuildingDefinition = {
   id:"bank"|StoreId;
@@ -16,7 +16,7 @@ export type StoreDefinition = CityBuildingDefinition & {
   id:StoreId;
   keeper:string;
   description:string;
-  stock:GearId[];
+  stock:ItemId[];
 };
 
 export const CITY_BANK:CityBuildingDefinition = {
@@ -51,7 +51,7 @@ export const STORE_ORDER:StoreId[] = ["general","weapons","armor","skills"];
 
 export function storeAcceptsItem(store:StoreId,item:ItemId) {
   if (store==="general") return true;
-  if (store==="weapons") return AXES.some(axe => axe.id===item);
-  if (store==="armor") return ARMOR.some(piece => piece.id===item);
+  if (store==="weapons") return ITEMS[item].category==="weapons";
+  if (store==="armor") return ITEMS[item].category==="armor";
   return false;
 }
