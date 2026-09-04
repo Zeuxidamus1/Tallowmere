@@ -55,7 +55,7 @@ test("keeps item, skill, shop, and reusable game systems outside the route",asyn
   assert.match(woodcutting,/xpMultiplier:5/);
   assert.match(woodcutting,/xpPerAction:125/);
   assert.match(woodcutting,/MAX_WOODCUTTING_XP/);
-  assert.match(itemRegistry,/logs:normalLogs/);
+  assert.match(itemRegistry,/export const LOGS = \[normalLogs,oakLogs,willowLogs,teakLogs,mapleLogs,mahoganyLogs,yewLogs,magicLogs,ancientLogs,celestialLogs\]/);
   assert.match(inventoryRules,/export function addInventoryItems/);
   assert.match(inventoryRules,/export function addNotedInventoryItems/);
   assert.match(inventoryRules,/export function notedInventoryCapacity/);
@@ -81,6 +81,44 @@ test("keeps item, skill, shop, and reusable game systems outside the route",asyn
   assert.doesNotMatch(page,/^const AXES/m);
   assert.doesNotMatch(page,/^function InventoryGrid/m);
   assert.doesNotMatch(page,/^function itemCount/m);
+});
+
+test("registers every woodcutting tree, log value, and supplied image",async () => {
+  const treeCatalog = await readFile(new URL("../app/game/skills/woodcutting/trees.ts",import.meta.url),"utf8");
+  const tiers = [
+    ["normal",1,"logs",50,125],
+    ["oak",15,"oak-logs",100,188],
+    ["willow",30,"willow-logs",175,338],
+    ["teak",35,"teak-logs",250,425],
+    ["maple",45,"maple-logs",350,500],
+    ["mahogany",50,"mahogany-logs",500,625],
+    ["yew",60,"yew-logs",750,875],
+    ["magic",75,"magic-logs",1250,1250],
+    ["ancient",85,"ancient-logs",2000,1750],
+    ["celestial",95,"celestial-logs",3500,2500],
+  ];
+
+  for (const [species,level,itemId,value,xp] of tiers) {
+    const fileName = species==="normal" ? "normal-logs.ts" : `${species}-logs.ts`;
+    const item = await readFile(new URL(`../app/game/items/resources/logs/${fileName}`,import.meta.url),"utf8");
+    assert.match(item,new RegExp(`id:"${itemId}"`));
+    assert.match(item,new RegExp(`requiredLevel:${level}`));
+    assert.match(item,new RegExp(`value:${value}`));
+    assert.match(item,new RegExp(`image:"assets/woodcutting/logs/${species}-logs\\.png"`));
+    assert.match(item,/noteable:true/);
+    assert.match(treeCatalog,new RegExp(`id:"${species}"[^\\n]+logId:"${itemId}"[^\\n]+requiredLevel:${level}[^\\n]+xp:${xp}[^\\n]+image:"assets/woodcutting/trees/${species}-tree\\.png"`));
+
+    for (const asset of [`logs/${species}-logs.png`,`trees/${species}-tree.png`]) {
+      const details = await stat(new URL(`../public/assets/woodcutting/${asset}`,import.meta.url));
+      assert.ok(details.size>0,`${asset} should be a real supplied asset`);
+    }
+  }
+
+  const page = await readFile(new URL("../app/page.tsx",import.meta.url),"utf8");
+  assert.match(page,/inventorySlots:addInventoryItems\(state\.inventorySlots,definition\.logId,logsGained\)/);
+  assert.match(page,/state\.xp \+ definition\.xp \* logsGained/);
+  assert.match(page,/definition\.requiredLevel>woodcuttingLevelFromXp/);
+  assert.match(page,/ITEMS\[item\]\.value\*safeAmount/);
 });
 
 test("keeps gold in one safe numeric balance and switches visual tiers",async () => {

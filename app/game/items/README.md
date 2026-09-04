@@ -4,7 +4,7 @@ Every game item belongs under a category in this folder. Item definitions hold t
 
 ## Categories
 
-- `resources/<type>/` contains gathered materials. Normal logs live in `resources/logs/normal-logs.ts`, so changing that file's `value` changes normal logs only.
+- `resources/<type>/` contains gathered materials. Every wood type has its own file in `resources/logs/`, so changing one file's `value` changes only that log type.
 - `weapons/<type>/` contains wieldable weapons. All current axes live in `weapons/axes/index.ts`; they are not stored with skill definitions.
 - `armor/<slot>/` contains worn items grouped by their equipment slot.
 - `index.ts` is the central registry. Game systems read this registry so banking, inventory, equipment, and future item interactions share one source of truth.

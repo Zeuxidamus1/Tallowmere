@@ -3,7 +3,7 @@
 - `components/` contains focused interface pieces such as the inventory grid, equipment slots, item icons, and trees.
 - `data/` contains world constants and map placement data.
 - `items/` is the categorized item catalog and central item registry.
-- `skills/` contains one section per skill. Woodcutting owns its XP curve, XP rewards, level cap, and axe-use rules in `skills/woodcutting/`.
+- `skills/` contains one section per skill. Woodcutting owns its XP curve, tree requirements, per-tree XP rewards, level cap, and axe-use rules in `skills/woodcutting/`.
 - `shops/` contains the city building and merchant catalog, including store locations and stock.
 - `currency/` owns the single numeric gold balance rules, amount formatting, and automatic icon-tier selection.
 - `lib/` contains reusable gameplay and inventory rules.

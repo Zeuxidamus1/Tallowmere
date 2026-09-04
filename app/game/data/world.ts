@@ -1,6 +1,17 @@
+import type { TreeSpecies } from "../types";
+
 export const TREE_LAYOUT = [
-  [5,10],[14,8],[87,8],[95,16],[4,58],[7,88],[18,95],[83,95],[94,83],[97,54],
-] as const;
+  {species:"normal",x:5,y:10},
+  {species:"oak",x:14,y:8},
+  {species:"willow",x:87,y:8},
+  {species:"teak",x:95,y:16},
+  {species:"maple",x:4,y:58},
+  {species:"mahogany",x:7,y:88},
+  {species:"yew",x:18,y:95},
+  {species:"magic",x:83,y:95},
+  {species:"ancient",x:94,y:83},
+  {species:"celestial",x:97,y:54},
+] as const satisfies readonly {species:TreeSpecies;x:number;y:number}[];
 
 export const BANK_POSITION = {x:23,y:40};
 export const SAVE_KEY = "tallowmere-save-v1";

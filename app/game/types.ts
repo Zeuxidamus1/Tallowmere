@@ -13,7 +13,10 @@ export type AxeId =
 
 export type ArmorId = "leather-cap" | "traveler-tunic" | "wooden-buckler" | "worn-trousers";
 export type GearId = AxeId | ArmorId;
-export type ItemId = "logs" | GearId;
+export type LogId =
+  | "logs" | "oak-logs" | "willow-logs" | "teak-logs" | "maple-logs"
+  | "mahogany-logs" | "yew-logs" | "magic-logs" | "ancient-logs" | "celestial-logs";
+export type ItemId = LogId | GearId;
 export type BankItemId = ItemId;
 export type BankMenuMode = "withdraw" | "deposit";
 export type ItemCounts = Partial<Record<ItemId,number>>;
@@ -30,12 +33,13 @@ export type AxeItem = GearItem & {
   id:AxeId; kind:"axe"; category:"weapons"; bonusChance:number; metal:string; edge:string; handle:string; shape:number;
 };
 export type ResourceItem = {
-  id:"logs"; name:string; kind:"resource"; category:"resources"; description:string;
-  requiredLevel:number; value:number; skill?:string; noteable?:boolean;
+  id:LogId; name:string; kind:"resource"; category:"resources"; description:string;
+  requiredLevel:number; value:number; image:string; skill?:string; noteable?:boolean;
 };
 export type ItemDefinition = GearItem | ResourceItem;
 export type EquipmentState = Record<EquipmentSlot,GearId|null>;
-export type TreeState = { id:number;x:number;y:number;charges:number;maxCharges:number;respawnAt:number };
+export type TreeSpecies = "normal" | "oak" | "willow" | "teak" | "maple" | "mahogany" | "yew" | "magic" | "ancient" | "celestial";
+export type TreeState = { id:number;species:TreeSpecies;x:number;y:number;charges:number;maxCharges:number;respawnAt:number };
 export type GameState = {
   xp:number; gold:number; inventorySlots:InventorySlots; bankItems:ItemCounts; afk:boolean; action:Action;
   targetTreeId:number|null; nextActionAt:number; characterX:number; characterY:number;

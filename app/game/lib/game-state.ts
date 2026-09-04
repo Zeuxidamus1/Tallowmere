@@ -1,11 +1,26 @@
 import { AXES, STARTING_EQUIPMENT } from "../items";
 import { BANK_POSITION, MAX_INVENTORY_SLOTS, TREE_LAYOUT } from "../data/world";
+import { WOODCUTTING_TREE_BY_ID, woodcuttingLevelFromXp } from "../skills";
 import type { GameState, InventorySlot, ItemCounts, TreeState } from "../types";
 
 function makeTrees():TreeState[] {
-  return TREE_LAYOUT.map(([x,y],id) => {
+  return TREE_LAYOUT.map(({x,y,species},id) => {
     const maxCharges = 5+((id*7+2)%6);
-    return {id,x,y,charges:maxCharges,maxCharges,respawnAt:0};
+    return {id,species,x,y,charges:maxCharges,maxCharges,respawnAt:0};
+  });
+}
+
+export function restoreTrees(value:unknown,now:number):TreeState[] {
+  const base = makeTrees();
+  if (!Array.isArray(value)) return base;
+  return base.map((tree,index) => {
+    const saved = value[index];
+    if (!saved || typeof saved!=="object") return tree;
+    const candidate = saved as Partial<TreeState>;
+    const charges = typeof candidate.charges==="number" && Number.isFinite(candidate.charges)
+      ? Math.max(0,Math.min(tree.maxCharges,Math.floor(candidate.charges))) : tree.maxCharges;
+    const respawnAt = charges===0 && typeof candidate.respawnAt==="number" && candidate.respawnAt>now ? candidate.respawnAt : 0;
+    return respawnAt ? {...tree,charges:0,respawnAt} : {...tree,charges:charges===0 ? tree.maxCharges : charges,respawnAt:0};
   });
 }
 
@@ -28,7 +43,8 @@ export function walkTime(ax:number,ay:number,bx:number,by:number) {
 }
 
 export function availableTree(state:GameState) {
-  return state.trees.filter(tree => tree.charges>0)
+  const level = woodcuttingLevelFromXp(state.xp);
+  return state.trees.filter(tree => tree.charges>0 && WOODCUTTING_TREE_BY_ID[tree.species].requiredLevel<=level)
     .sort((a,b) => distance(state.characterX,state.characterY,a.x,a.y)-distance(state.characterX,state.characterY,b.x,b.y))[0];
 }
 

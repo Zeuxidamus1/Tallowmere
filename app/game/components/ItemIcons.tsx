@@ -1,6 +1,6 @@
 import type { CSSProperties } from "react";
 import { AXE_BY_ID, GEAR, ITEMS } from "../items";
-import type { AxeId, GearId, ItemId } from "../types";
+import type { AxeId, GearId, ItemId, LogId } from "../types";
 
 export function AxeIcon({id="bronze-axe",small=false}:{id?:AxeId;small?:boolean}) {
   const axe = AXE_BY_ID[id];
@@ -8,8 +8,12 @@ export function AxeIcon({id="bronze-axe",small=false}:{id?:AxeId;small?:boolean}
   return <span className={`axe-icon axe-icon--shape-${axe.shape} ${small ? "axe-icon--small" : ""}`} style={colors} aria-hidden="true"><i/><b/></span>;
 }
 
-export function LogIcon({small=false}:{small?:boolean}) {
-  return <span className={`log-icon ${small ? "log-icon--small" : ""}`} aria-hidden="true"><i/><b/></span>;
+export function LogIcon({id="logs",small=false}:{id?:LogId;small?:boolean}) {
+  const item = ITEMS[id];
+  return <span className={`log-icon log-icon--art ${small ? "log-icon--small" : ""}`} aria-hidden="true">
+    {/* eslint-disable-next-line @next/next/no-img-element -- public item art must also work in the GitHub Pages build */}
+    <img src={item.kind==="resource" ? item.image : ""} alt="" draggable="false"/>
+  </span>;
 }
 
 export function GearIcon({id,small=false}:{id:GearId;small?:boolean}) {
@@ -18,7 +22,6 @@ export function GearIcon({id,small=false}:{id:GearId;small?:boolean}) {
 }
 
 export function ItemIcon({id,small=false}:{id:ItemId;small?:boolean}) {
-  if (id==="logs") return <LogIcon small={small}/>;
-  if (ITEMS[id].kind==="resource") return <span className={`resource-icon resource-icon--${id} ${small ? "resource-icon--small" : ""}`} aria-hidden="true"><i/><b/></span>;
+  if (ITEMS[id].kind==="resource") return <LogIcon id={id as LogId} small={small}/>;
   return <GearIcon id={id as GearId} small={small}/>;
 }

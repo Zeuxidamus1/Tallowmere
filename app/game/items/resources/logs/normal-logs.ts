@@ -9,5 +9,6 @@ export const normalLogs:ResourceItem = {
   description:"Freshly cut wood",
   requiredLevel:1,
   value:50,
+  image:"assets/woodcutting/logs/normal-logs.png",
   noteable:true,
 };

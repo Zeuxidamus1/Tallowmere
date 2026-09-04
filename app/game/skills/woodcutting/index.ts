@@ -2,6 +2,8 @@ import { AXE_BY_ID, GEAR } from "../../items";
 import type { AxeId, GameState } from "../../types";
 import type { SkillDefinition } from "../types";
 
+export * from "./trees";
+
 export const WOODCUTTING:SkillDefinition = {
   id:"woodcutting",
   name:"Woodcutting",
