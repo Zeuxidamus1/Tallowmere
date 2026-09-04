@@ -78,6 +78,8 @@ test("keeps item, skill, shop, and reusable game systems outside the route",asyn
   assert.match(page,/bank-item--currency/);
   assert.match(page,/Withdraw as Note/);
   assert.match(page,/tallowmere-city\.png/);
+  const equipGearBody = page.match(/const equipGear = \(id:GearId\) => \{([\s\S]*?)\n {2}\};/)?.[1] ?? "";
+  assert.doesNotMatch(equipGearBody,/setPanel\("equipment"\)/);
   assert.doesNotMatch(page,/^const AXES/m);
   assert.doesNotMatch(page,/^function InventoryGrid/m);
   assert.doesNotMatch(page,/^function itemCount/m);

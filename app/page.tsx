@@ -301,7 +301,7 @@ export default function Home() {
 
   const equipGear = (id:GearId) => {
     const item = GEAR[id];
-    if (item.requiredLevel > level) { setGearNotice(`${item.name} requires ${WOODCUTTING.name} level ${item.requiredLevel}.`); setPanel("equipment"); return; }
+    if (item.requiredLevel > level) { setGearNotice(`${item.name} requires ${WOODCUTTING.name} level ${item.requiredLevel}.`); return; }
     setGame(previous => {
       const inventoryIndex = previous.inventorySlots.indexOf(id);
       if (inventoryIndex < 0) return previous;
@@ -312,7 +312,6 @@ export default function Home() {
       return { ...previous, equipment:{...previous.equipment,[item.slot]:id}, inventorySlots, now:Date.now() };
     });
     setGearNotice(`${item.name} equipped.`);
-    setPanel("equipment");
   };
 
   const unequipGear = (slot:EquipmentSlot) => {
